@@ -1,7 +1,7 @@
 (ns memgraph.store.memory
   "In-memory Store implementation backed by an atom of plain maps. Exists to
-  validate the protocol seam and to run the test suite without the Datalevin
-  pod. Facts are stored directly in the wire shape."
+  validate the storage abstraction and to run the test suite without the
+  Datalevin pod. Facts are stored directly in the wire shape."
   (:require [clojure.string :as str]
             [memgraph.store :as store]))
 

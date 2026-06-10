@@ -100,7 +100,7 @@ CLI / skill front-end        src/memgraph/cli.clj        arg parsing, JSON in/ou
         │                    src/memgraph/predicates.clj filters, BFS folds, decay plans,
         │                                                vocabulary + validation
    ┌────┴─────────┐
-   │ Store protocol│         src/memgraph/store.clj      the swappable seam
+   │ Store protocol│         src/memgraph/store.clj      the storage abstraction
    └────┬─────────┘
         │
    datalevin impl            src/memgraph/store/datalevin.clj   the only layer that
@@ -109,10 +109,10 @@ CLI / skill front-end        src/memgraph/cli.clj        arg parsing, JSON in/ou
 
 - **Storage**: [Datalevin](https://github.com/datalevin/datalevin) via Babashka
   pod — the `dtlv` binary is a GraalVM native image that speaks the pod
-  protocol, so the whole stack is two fast-start native binaries. The store
-  protocol keeps SQLite (or anything else) a live fallback; the test suite runs
-  identically against the in-memory implementation, which is the proof of the
- abstraction.
+  protocol, so the whole stack is two fast-start native binaries. The pod is
+  loaded from `$PATH` (override with `$MEMGRAPH_DTLV`) at a pinned release.
+  The storage abstraction keeps other engines pluggable; the test suite runs
+  identically against the in-memory implementation, which is the proof of it.
 - **Bi-temporality is modeled, not engine-native**: explicit `t-valid` /
   `t-invalid` / `recorded-at` attributes, identical in shape across backends.
 - **Objects are entities or literals** (RDF-style): traversal only follows
@@ -122,15 +122,18 @@ CLI / skill front-end        src/memgraph/cli.clj        arg parsing, JSON in/ou
   as twins — nothing to keep consistent on invalidation.
 - **`has-status` is a predicate**, so ADR status history accumulates
   bi-temporally and status changes flow through the conflict machinery.
-- **`ensure-entity` is its own abstraction** with a trivial exact name+scope body for
-  now; renames/splits/aliases will live there (fork #3, deferred).
+- **`ensure-entity` matches on exact name+scope**; entity resolution
+  (renames, splits, aliases) will live behind it.
 
 ## Ingestion tiers
 
 1. **`ingest-code`** — mechanical Clojure analysis (edamame ns-form parsing, no
    LLM): `defined-in`, `depends-on`, `written-in` facts at 0.95 confidence
-   under a `:code` episode ref'd to the git SHA. Idempotent; a namespace that
-   moves files supersedes its old location automatically.
+   under a `:code` episode ref'd to the git SHA. Each pass reconciles the
+   store against the code: facts the analysis no longer produces (deleted
+   files, removed requires, dropped namespaces) are invalidated mechanically,
+   unchanged facts no-op, and a namespace that moves files supersedes its old
+   location. The graph tracks the code with no LLM in the loop.
 2. **`session-extract`** — LLM extraction of durable knowledge (preferences,
    decisions, gotchas, conventions) from a session transcript — plain text or
    Claude Code session JSONL. The extractor is pluggable: defaults to an
@@ -159,24 +162,9 @@ bb test    # 25 tests / 151 assertions
 ```
 
 The core-semantics suite runs against BOTH store implementations (the proof of
-the protocol seam); the logic suite tests pure decision functions with no store
-at all; the session suite injects a fake extractor and never shells out.
+the storage abstraction); the logic suite tests pure decision functions with no
+store at all; the session suite injects a fake extractor and never shells out.
 `MEMGRAPH_TEST_SKIP_DATALEVIN=1 bb test` runs pod-free.
-
-## Deviations from the handoff doc (v0 honesty)
-
-- The `Store` protocol holds raw primitives; conflict semantics moved up into
-  `core` so both backends share one implementation (the handoff sketched
-  conflict detection inside `-assert-fact`).
-- `ingest` runs per-fact transactions, not one batch transaction — per-fact
-  conflict policy won over batch atomicity for now.
-- The pod loads `dtlv` from `$PATH` (or `$MEMGRAPH_DTLV`) at a pinned release
-  (0.10.18) rather than from the pod registry — registry download requires
-  TLS trust of whatever proxy the environment runs behind; a binary on PATH
-  doesn't.
-- `decay` is age-based only (no reference tracking yet); `consolidate` is a
-  stub; ACL fields are carried in the schema but unenforced — all per the
-  roadmap.
 
 ## Documents
 

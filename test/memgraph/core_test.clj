@@ -1,8 +1,8 @@
 (ns memgraph.core-test
   "Core semantics, run against every Store implementation — the same suite
   exercises the in-memory store and the Datalevin pod store, which is the
-  test of the protocol seam itself. Set MEMGRAPH_TEST_SKIP_DATALEVIN=1 to run
-  pod-free."
+  test of the storage abstraction itself. Set MEMGRAPH_TEST_SKIP_DATALEVIN=1
+  to run pod-free."
   (:require [babashka.fs :as fs]
             [clojure.test :refer [deftest is testing]]
             [memgraph.core :as core]

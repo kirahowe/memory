@@ -5,23 +5,17 @@ Remaining roadmap, in rough priority order. Rationale for most items lives in
 
 ## Next up
 
-- [ ] **Mechanical invalidation on git events.** Re-running `ingest-code`
-      already supersedes moved namespaces, but facts about deleted files /
-      removed requires linger as currently-valid. Diff the previous `:code`
-      episode's facts against the new analysis and invalidate what vanished —
-      cheap, 100% reliable, no LLM.
-- [ ] **Pluggable LLM judge on the semantic-conflict path.** The seam exists
-      (`assert-fact` returns `:candidates` on flag); add an optional
+- [ ] **Pluggable LLM judge on the semantic-conflict path.** `assert-fact`
+      already returns `:candidates` on flag; add an optional
       `judge(fact-a, fact-b) -> {relation, confidence}` that enriches flagged
       conflicts, defaulting to the same subscription-as-judge mechanism as the
       session extractor.
 - [ ] **Consolidation (Dreaming-style).** `consolidate` is a stub: episode
       summarization on close, repeated-pattern promotion to procedural memory,
-      reconcile + decay in one offline pass. Depends on the judge seam.
+      reconcile + decay in one offline pass. Depends on the LLM judge.
 - [ ] **Entity resolution.** `ensure-entity` is exact name+scope match by
-      design (handoff fork #3). Aliases, renames, and split identities
-      (`UserService` → `UserReadService` + `UserWriteService`) belong behind
-      that seam.
+      design. Aliases, renames, and split identities (`UserService` →
+      `UserReadService` + `UserWriteService`) belong behind that abstraction.
 - [ ] **Failure ingester.** When agent work is rejected or reverted, extract
       why — this is where procedural memory grows from.
 - [ ] **Decision-record (ADR) ingester.** Highest-authority source; parse ADR
@@ -58,3 +52,7 @@ Remaining roadmap, in rough priority order. Rationale for most items lives in
 - [x] Session-log extractor (`session-extract`): pluggable LLM extractor over
       transcripts (plain text or Claude Code session JSONL), dry-run mode,
       confidence capped at 0.7, source-type `:session-log`.
+- [x] Mechanical invalidation on git events: every `ingest-code` pass
+      reconciles the store against the new analysis and invalidates
+      code-sourced facts it no longer produces (deleted files, removed
+      requires, dropped namespaces). Non-lossy; history retains them.

@@ -139,15 +139,9 @@
         (emit opts (core/ingest s (select-keys opts [:episode :source-type :ref]) facts))))))
 
 (defn cmd-ingest-code [{:keys [opts]}]
-  (let [analyze (requiring-resolve 'memgraph.ingest.clj-code/analyze)
-        {:keys [ref files facts]} (analyze (select-keys opts [:dir :scope]))]
+  (let [ingest-code (requiring-resolve 'memgraph.ingest.clj-code/ingest!)]
     (with-store opts
-      (fn [s]
-        (let [result (core/ingest s {:source-type :code :ref ref} facts)
-              _ (core/close-episode s {:episode (:episode result)
-                                       :summary (str "code-analysis pass: " files " files, "
-                                                     (count facts) " facts from " ref)})]
-          (emit opts (assoc result :files files :ref ref)))))))
+      (fn [s] (emit opts (ingest-code s (select-keys opts [:dir :scope])))))))
 
 (defn cmd-session-extract [{:keys [opts]}]
   (let [extract (requiring-resolve 'memgraph.ingest.session/extract!)]

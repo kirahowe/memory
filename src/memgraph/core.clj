@@ -70,7 +70,7 @@
 
 (defn ensure-entity
   "Exact name+scope match or create. Entity resolution (renames, splits,
-  aliases) will eventually live behind this seam."
+  aliases) will eventually live behind this operation."
   [s {:keys [name type scope]}]
   (when (str/blank? (str name))
     (logic/fail "Entity name required" {:type :missing-entity-name}))
@@ -234,9 +234,9 @@
 
 (defn ingest
   "Batch-assert facts under one episode, each through the full conflict
-  machinery. Returns per-status counts plus flagged/error details.
-  (v0 deviation: per-fact transactions, not one batch transaction — conflict
-  policy per fact takes precedence over batch atomicity for now.)"
+  machinery. Returns per-status counts plus flagged/error details. Runs
+  per-fact transactions: applying conflict policy fact-by-fact takes
+  precedence over batch atomicity."
   [s {:keys [episode source-type ref]} fact-maps]
   (let [ep (if episode
              (or (store/-get-episode s episode)
@@ -272,8 +272,8 @@
     {:status :decayed :affected (count plan)}))
 
 (defn consolidate
-  "Dreaming-style offline consolidation. Defined in the surface, stubbed for
-  MVP — the seam exists so adding an LLM judge changes no API."
+  "Dreaming-style offline consolidation. Defined in the surface, stubbed
+  until the pluggable LLM judge lands — adding it changes no API."
   [s _opts]
   {:status :not-implemented
    :hint "Consolidation (episode summarization, pattern promotion) lands with the pluggable LLM judge."

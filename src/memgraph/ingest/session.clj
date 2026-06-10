@@ -133,7 +133,7 @@
   "Run the pluggable extractor over a transcript and ingest the results.
   opts: :file (path; stdin when absent) | :transcript (string, wins over :file)
         :ref (episode ref) :extractor (command string)
-        :extractor-fn (prompt -> response; the injection seam)
+        :extractor-fn (prompt -> response; injectable, used by tests)
         :dry-run (extract and report, write nothing)"
   [s {:keys [file transcript ref extractor extractor-fn dry-run]}]
   (let [content (or transcript (if file (slurp file) (slurp *in*)))

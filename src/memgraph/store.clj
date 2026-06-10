@@ -1,9 +1,9 @@
 (ns memgraph.store
-  "The swappable seam between storage-agnostic core operations and a
-  concrete storage engine. Implementations speak plain Clojure maps in
-  the wire shapes documented below; all temporal/conflict/validation
-  semantics live in memgraph.core, NOT here. Store methods are raw
-  primitives.
+  "The storage abstraction: the boundary between storage-agnostic core
+  operations and a concrete storage engine. Implementations speak plain
+  Clojure maps in the wire shapes documented below; all temporal/conflict/
+  validation semantics live in memgraph.core and memgraph.logic, NOT here.
+  Store methods are raw primitives.
 
   Wire shapes:
 
