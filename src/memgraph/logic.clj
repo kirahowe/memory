@@ -120,18 +120,21 @@
 
 (defn decide-assert
   "The assertion decision, as data. Given the candidate fact, its predicate
-  registry row, and the currently-valid facts for (subject, predicate),
-  return an effect plan for the shell:
+  registry row, the currently-valid facts for (subject, predicate), and any
+  exclusion antagonists — same-subject, same-object facts on predicates
+  sharing the asserted predicate's exclusion group, gathered by the shell —
+  return an effect plan:
 
     {:action :noop      :existing fact}
     {:action :insert    :fact fact}
     {:action :supersede :fact fact :invalidate [fact-ids]}
     {:action :flag      :fact fact :link [fact-ids] :candidates [facts]}"
-  [{:keys [fact pred existing on-conflict]}]
+  [{:keys [fact pred existing exclusion on-conflict]}]
   (let [same? (same-object-pred fact)
         duplicate (first (filter same? existing))
-        conflicting (when (= :one (:cardinality pred))
-                      (vec (remove same? existing)))]
+        conflicting (vec (concat (when (= :one (:cardinality pred))
+                                   (remove same? existing))
+                                 exclusion))]
     (cond
       duplicate
       {:action :noop :existing duplicate}
@@ -216,6 +219,16 @@
   [s]
   (-> (str s) str/lower-case (str/replace #"[\s\-_./]+" "")))
 
+(defn same-object-loosely?
+  "Do two facts point at the same thing, across the entity/literal divide?
+  decided-against \"GraphQL\" (literal) and prefers GraphQL (entity) are the
+  same object in different clothes — compare normalized name-or-literal.
+  Over-matching is safe: it produces a flag the judge can rule compatible."
+  [a b]
+  (let [obj-str (fn [f] (or (get-in f [:object-ref :name]) (:object-lit f)))
+        sa (obj-str a) sb (obj-str b)]
+    (boolean (and sa sb (= (normalize-entity-name sa) (normalize-entity-name sb))))))
+
 (defn pick-entity-match
   "Resolution order over candidate entities: exact name, exact alias, then a
   UNIQUE normalized match guarded by type compatibility (a namespace must not
@@ -271,6 +284,61 @@
 ;; ---------------------------------------------------------------------------
 ;; Conflicts
 ;; ---------------------------------------------------------------------------
+
+(defn- unordered-pairs [xs]
+  (let [v (vec xs)]
+    (for [i (range (count v))
+          j (range (inc i) (count v))]
+      [(v i) (v j)])))
+
+(defn- already-linked? [a b]
+  (boolean (or (some #{(:id b)} (:conflicts a))
+               (some #{(:id a)} (:conflicts b)))))
+
+(defn- newer-first [a b]
+  (let [t #(or (some-> ^java.util.Date (:recorded-at %) .getTime) 0)]
+    (if (>= (t a) (t b)) [a b] [b a])))
+
+(defn conflict-candidates
+  "Pure candidate generation for the deferred judge sweep: over each
+  subject's currently-valid facts and the predicate registry, the pairs
+  worth an LLM verdict —
+
+    :exclusive-values  multiple values of a predicate whose registry row says
+                       :value-exclusivity :exclusive (two prefers on one
+                       subject tend to be alternatives, not accumulation)
+    :cross-predicate   different predicates, loosely the same object, at
+                       least one side :decision-category (depends-on X while
+                       decided-against X stands)
+
+  O(facts-per-subject²), never O(graph²). Pairs already linked as conflicts
+  are skipped; each pair is returned newer-first as {:fact :candidate :reason}."
+  [facts preds-by-id at]
+  (->> (filter #(fact-valid-at? % at) facts)
+       (group-by (comp :id :subject))
+       (mapcat
+        (fn [[_ fs]]
+          (concat
+           (for [[p group] (group-by :predicate fs)
+                 :when (= :exclusive (:value-exclusivity (preds-by-id p)))
+                 pair (unordered-pairs group)]
+             {:pair pair :reason :exclusive-values})
+           (for [pair (unordered-pairs fs)
+                 :let [[a b] pair]
+                 :when (and (not= (:predicate a) (:predicate b))
+                            (or (= :decision (:category (preds-by-id (:predicate a))))
+                                (= :decision (:category (preds-by-id (:predicate b)))))
+                            (same-object-loosely? a b))]
+             {:pair pair :reason :cross-predicate}))))
+       (remove (fn [{[a b] :pair}] (already-linked? a b)))
+       (reduce (fn [acc {:keys [pair reason]}]
+                 (let [k (set (map :id pair))]
+                   (if (acc k) acc (assoc acc k {:pair pair :reason reason}))))
+               {})
+       vals
+       (mapv (fn [{:keys [pair reason]}]
+               (let [[n o] (apply newer-first pair)]
+                 {:fact n :candidate o :reason reason})))))
 
 (defn open-conflicts
   "Conflict pairs still awaiting resolution: a flagged fact and the candidate

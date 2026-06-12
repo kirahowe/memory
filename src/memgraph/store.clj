@@ -42,8 +42,9 @@
   (-insert-fact [s fact]
     "Raw insert of a complete fact map. No conflict logic. Returns the fact.")
   (-get-facts [s entity-id opts]
-    "Raw facts touching an entity. opts {:direction :out|:in|:both, :predicate kw}.
-    Includes invalidated facts; validity filtering happens in core.")
+    "Raw facts touching an entity. opts {:direction :out|:in|:both,
+    :predicate kw-or-coll} (a collection is one query with the set bound, not
+    a loop). Includes invalidated facts; validity filtering happens in core.")
   (-get-facts-for [s entity-ids opts]
     "Batched -get-facts: every fact touching ANY of entity-ids, deduplicated,
     fetched in one query per direction regardless of how many ids are passed.
@@ -53,6 +54,7 @@
     is a whitelisted map of structural attributes, ANDed:
       :ids [fact-id]          exact fact ids
       :source-type kw         e.g. :code
+      :predicates coll-of-kw  fact predicate is one of these
       :scopes coll-of-str     fact scope is one of these
       :episodes [episode-id]  provenance episode is one of these
       :recorded-before inst   recorded earlier than this (missing recorded-at

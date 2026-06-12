@@ -13,9 +13,13 @@ Remaining roadmap, in rough priority order. Rationale for most items lives in
       allowed) feeds `conflicts`/`decay`/`stale-facts`/consolidation;
       `-predicate-usage` aggregates store-side. Policy stayed pure and
       unmoved — logic just receives fewer facts.
-- [ ] 3. Conflict detection only fires on same-(subject, predicate)
-      :one-cardinality collisions; cross-predicate and many-valued
-      contradictions never reach the flag/judge pipeline.
+- [x] 3. Conflict detection widened by candidate generation, two-tier:
+      registry exclusion groups (`:stance`, `:revision`) catch cross-predicate
+      stance collisions deterministically at write time (loose object
+      matching, flag-by-epistemic-composition); `judge --sweep` generates
+      what writes can't see — exclusive-value pairs and decision-vs-anything
+      shared-object pairs — pure and per-subject bounded, judged offline,
+      linked into the same pipeline. The LLM never runs on the write path.
 - [ ] 4. Extractor identity discipline: resolution + aliases exist, but the
       session extractor doesn't consult existing entities when naming
       subjects, and ambiguous matches silently create rather than flag.

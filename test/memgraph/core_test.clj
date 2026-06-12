@@ -112,6 +112,26 @@
         (is (zero? (:open (core/conflicts s))))
         (is (= 2 (count (:facts (core/get-facts s {:entity "ADR-9"})))))))))
 
+(deftest cross-predicate-stance-conflicts
+  (with-stores [s]
+    (core/assert-fact s {:subject "api-layer" :predicate :core/prefers :object "GraphQL"})
+    (let [r (core/assert-fact s {:subject "api-layer" :predicate :core/decided-against
+                                 :object "graph-ql" :object-kind :literal})]
+      (testing "an opposed stance toward the same object flags at write time"
+        (is (= :flagged (:status r)))
+        (is (= :core/prefers (:predicate (first (:candidates r))))
+            "the antagonist crosses predicates — and the entity/literal divide")
+        (is (= 1 (:open (core/conflicts s))))))
+    (testing "unrelated objects in the same group don't collide"
+      (is (= :created (:status (core/assert-fact s {:subject "api-layer"
+                                                    :predicate :core/decided-against
+                                                    :object "SOAP"})))))
+    (testing "the reverse order flags too (new preference vs standing decision)"
+      (core/assert-fact s {:subject "ui" :predicate :core/decided-against :object "Redux"})
+      (is (= :flagged (:status (core/assert-fact s {:subject "ui"
+                                                    :predicate :core/prefers
+                                                    :object "Redux"})))))))
+
 (deftest unknown-predicate-did-you-mean
   (with-stores [s]
     (let [e (try (core/assert-fact s {:subject "A" :predicate :core/depnds-on :object "B"})
@@ -205,6 +225,12 @@
                (mapv :id (store/-select-facts s {:conflicted true :valid-cheap true})))))
       (testing "exact ids"
         (is (= 1 (count (store/-select-facts s {:ids [(get-in pref [:fact :id])]})))))
+      (testing ":predicates narrows by predicate set"
+        (is (= 2 (count (store/-select-facts s {:predicates [:core/has-status]})))))
+      (testing "-get-facts :predicate accepts a collection"
+        (let [aid (get-in (core/resolve-entity s {:name "A"}) [:entity :id])]
+          (is (= 2 (count (store/-get-facts s aid {:predicate [:core/depends-on
+                                                               :core/prefers]}))))))
       (testing "valid-cheap drops invalidated facts"
         (core/invalidate s {:fact-id (get-in pref [:fact :id])})
         (is (= 3 (count (store/-select-facts s {:valid-cheap true}))))

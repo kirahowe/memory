@@ -65,18 +65,22 @@
    ;; ---- Decision / preference ----
    {:id :core/supersedes :label "supersedes" :category :decision
     :object-kind :entity :cardinality :many :inverse-of :core/superseded-by
+    :exclusion-group :revision
     :status :stable :default-epistemic :commitment :maps-to "prov:wasRevisionOf, dcterms:replaces"
     :definition "Subject decision/record replaces the object decision/record."}
    {:id :core/superseded-by :label "superseded by" :category :decision
     :object-kind :entity :cardinality :many :inverse-of :core/supersedes
+    :exclusion-group :revision
     :status :stable :default-epistemic :commitment :maps-to "dcterms:isReplacedBy"
     :definition "Inverse of supersedes."}
    {:id :core/decided-against :label "decided against" :category :decision
     :object-kind :either :cardinality :many
+    :exclusion-group :stance
     :status :stable :default-epistemic :commitment :maps-to "LOCAL (ADR rejected-alternative)"
     :definition "A human decision explicitly rejected the object option. Outlives code state."}
    {:id :core/prefers :label "prefers" :category :decision
     :object-kind :either :cardinality :many
+    :exclusion-group :stance :value-exclusivity :exclusive
     :status :stable :default-epistemic :preference :maps-to "LOCAL"
     :definition "Subject (person, project, module) prefers the object approach, idiom, or tool."}
    {:id :core/motivated-by :label "motivated by" :category :decision

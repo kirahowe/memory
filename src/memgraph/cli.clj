@@ -98,7 +98,9 @@
     (fn [s] (emit opts (core/conflicts s)))))
 
 (defn cmd-judge [{:keys [opts]}]
-  (let [judge (requiring-resolve 'memgraph.judge/judge-conflicts!)]
+  (let [judge (requiring-resolve (if (:sweep opts)
+                                   'memgraph.judge/sweep-conflicts!
+                                   'memgraph.judge/judge-conflicts!))]
     (with-store opts
       (fn [s]
         (emit opts (judge s (select-keys opts [:command :resolve :min-confidence])))))))
@@ -234,6 +236,10 @@ Commands:
                         superseded facts, unlinks compatible pairs. A
                         contradicts verdict is never auto-resolved.
                         [--command \"claude -p\"] (default $MEMGRAPH_LLM_CMD)
+                        --sweep generates candidates the write path can't
+                        see (exclusive-value pairs, decision-category facts
+                        sharing an object across predicates), judges them,
+                        and links genuine hits into the same pipeline.
   entity ensure       --name N [--type T] [--scope S]
   entity list         [--type T] [--scope S]
   entity rename       --from X --to Y [--scope S]  (old name kept as alias;
@@ -291,6 +297,7 @@ Commands:
    {:cmds ["invalidate"] :fn cmd-invalidate}
    {:cmds ["conflicts"] :fn cmd-conflicts}
    {:cmds ["judge"] :fn cmd-judge :spec {:resolve {:coerce :boolean}
+                                         :sweep {:coerce :boolean}
                                          :min-confidence {:coerce :double}}}
    {:cmds ["entity" "ensure"] :fn cmd-entity-ensure}
    {:cmds ["entity" "list"] :fn cmd-entity-list}

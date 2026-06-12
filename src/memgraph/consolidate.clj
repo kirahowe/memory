@@ -137,15 +137,19 @@
                    [])
         run (or summarize-fn (partial llm/complete! (llm/command command)))
         episodes (summarize-episodes! s run (plan-episodes all-episodes ep-facts))
-        conflicts (try (judge/judge-conflicts! s {:command command
-                                                  :judge-fn judge-fn
-                                                  :resolve resolve
-                                                  :min-confidence min-confidence})
+        judge-opts {:command command
+                    :judge-fn judge-fn
+                    :resolve resolve
+                    :min-confidence min-confidence}
+        conflicts (try (judge/judge-conflicts! s judge-opts)
                        (catch Exception e {:error (ex-message e)}))
+        sweep (try (judge/sweep-conflicts! s judge-opts)
+                   (catch Exception e {:error (ex-message e)}))
         decay (core/decay s {:older-than-days older-than-days :factor factor})]
     {:status :consolidated
      :episodes episodes
      :conflicts conflicts
+     :sweep sweep
      :decay decay
      :promotion-candidates (promotion-candidates
                             (store/-list-predicates s {:status :testing})

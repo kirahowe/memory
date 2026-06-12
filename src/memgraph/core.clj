@@ -18,11 +18,11 @@
 ;; ---------------------------------------------------------------------------
 
 (defn seed!
-  "Idempotently install the core vocabulary."
+  "Install or refresh the core vocabulary. A true upsert: existing rows pick
+  up new registry fields on re-seed (run `memgraph init` after upgrading)."
   [s]
   (doseq [p preds/seed]
-    (when-not (store/-get-predicate s (:id p))
-      (store/-register-predicate s p)))
+    (store/-register-predicate s p))
   {:status :seeded :predicates (count (store/-list-predicates s {}))})
 
 (defn resolve-predicate-id
@@ -273,12 +273,25 @@
                                 :scope scope
                                 :source-type (logic/->kw source-type)
                                 :episode episode})
-        existing (->> (store/-get-facts s (:id subj) {:direction :out :predicate pred-id})
-                      (filterv #(logic/fact-valid-at? % t-now)))]
+        group-mates (when-let [g (:exclusion-group pred)]
+                      (->> (store/-list-predicates s {})
+                           (filter #(= g (:exclusion-group %)))
+                           (map :id)
+                           (remove #{pred-id})
+                           vec))
+        fetched (->> (store/-get-facts s (:id subj)
+                                       {:direction :out
+                                        :predicate (if (seq group-mates)
+                                                     (into [pred-id] group-mates)
+                                                     pred-id)})
+                     (filterv #(logic/fact-valid-at? % t-now)))]
     (execute-assert! s t-now
                      (logic/decide-assert {:fact fact
                                            :pred pred
-                                           :existing existing
+                                           :existing (filterv #(= pred-id (:predicate %)) fetched)
+                                           :exclusion (filterv #(and (not= pred-id (:predicate %))
+                                                                     (logic/same-object-loosely? fact %))
+                                                               fetched)
                                            :on-conflict (logic/->kw on-conflict)}))))
 
 ;; ---------------------------------------------------------------------------

@@ -45,24 +45,29 @@
    :confidence (:confidence f)
    :recorded-at (:recorded-at f)})
 
-(defn judgment-prompt [{:keys [fact candidate]} pred]
-  (str
-   "Two facts in a project knowledge graph were mechanically flagged as a\n"
-   "conflict: same subject and predicate, different objects. Fact A is the\n"
-   "newer assertion; fact B is the established one. Judge the semantic\n"
-   "relationship of A to B.\n\n"
-   "Respond with a single JSON object and nothing else — no prose, no fences:\n"
-   "{\"relation\": \"contradicts\"|\"duplicate\"|\"supersedes\"|\"compatible\",\n"
-   " \"confidence\": 0.0-1.0,\n"
-   " \"rationale\": \"one sentence\"}\n\n"
-   "Definitions:\n"
-   "- contradicts: genuinely incompatible claims; a human must decide.\n"
-   "- duplicate: A restates B in different words; A adds nothing.\n"
-   "- supersedes: A is the legitimate successor of B; B is outdated.\n"
-   "- compatible: both can be true at once; not actually in conflict.\n\n"
-   "Predicate " (subs (str (:id pred)) 1) ": " (:definition pred) "\n\n"
-   "Fact A (newer):\n" (json/generate-string (fact->summary fact)) "\n\n"
-   "Fact B (established):\n" (json/generate-string (fact->summary candidate)) "\n"))
+(defn judgment-prompt
+  "Prompt for one conflict pair. pred-a/pred-b are the registry rows for the
+  two facts' predicates — equal for mechanically-flagged pairs, possibly
+  different for swept cross-predicate candidates."
+  [{:keys [fact candidate]} pred-a pred-b]
+  (let [pred-line (fn [p] (str "Predicate " (subs (str (:id p)) 1) ": " (:definition p)))]
+    (str
+     "Two facts about the same subject in a project knowledge graph were\n"
+     "proposed as a possible conflict. Fact A is the newer assertion; fact B\n"
+     "is the established one. Judge the semantic relationship of A to B.\n\n"
+     "Respond with a single JSON object and nothing else — no prose, no fences:\n"
+     "{\"relation\": \"contradicts\"|\"duplicate\"|\"supersedes\"|\"compatible\",\n"
+     " \"confidence\": 0.0-1.0,\n"
+     " \"rationale\": \"one sentence\"}\n\n"
+     "Definitions:\n"
+     "- contradicts: genuinely incompatible claims; a human must decide.\n"
+     "- duplicate: A restates B in different words; A adds nothing.\n"
+     "- supersedes: A is the legitimate successor of B; B is outdated.\n"
+     "- compatible: both can be true at once; not actually in conflict.\n\n"
+     (->> (distinct (keep #(when % (pred-line %)) [pred-a pred-b]))
+          (str/join "\n"))
+     "\n\nFact A (newer):\n" (json/generate-string (fact->summary fact))
+     "\n\nFact B (established):\n" (json/generate-string (fact->summary candidate)) "\n")))
 
 ;; ---------------------------------------------------------------------------
 ;; Pure: verdict parsing & resolution plan
@@ -129,8 +134,10 @@
         min-confidence (double (or min-confidence default-min-confidence))
         results
         (mapv (fn [{:keys [fact candidate] :as pair}]
-                (let [pred (store/-get-predicate s (:predicate fact))
-                      verdict (parse-judgment (run (judgment-prompt pair pred)))
+                (let [verdict (parse-judgment
+                               (run (judgment-prompt pair
+                                                     (store/-get-predicate s (:predicate fact))
+                                                     (store/-get-predicate s (:predicate candidate)))))
                       plan (resolution-plan pair verdict min-confidence)]
                   (when resolve
                     (execute-resolution! s at pair plan))
@@ -141,5 +148,60 @@
                     resolve (assoc :executed (not= :none (:action plan))))))
               (:conflicts (core/conflicts s)))]
     {:conflicts (count results)
+     :resolved (count (filter :executed results))
+     :results results}))
+
+(defn sweep-conflicts!
+  "Deferred candidate generation: propose judgeable pairs the write path
+  can't see (pure, per-subject bounded — logic/conflict-candidates), run each
+  through the LLM verdict once, and link genuine hits into the same conflict
+  pipeline. Compatible and unparseable verdicts are dropped silently — a
+  noisy generator can't mutate anything. Linked contradictions surface in
+  `conflicts` for the human; with :resolve, duplicate/supersedes verdicts at
+  or above :min-confidence are executed immediately (same resolution plans
+  as judge-conflicts!)."
+  [s {:keys [command judge-fn resolve min-confidence]}]
+  (let [at (java.util.Date.)
+        run (or judge-fn (partial llm/complete! (llm/command command)))
+        min-confidence (double (or min-confidence default-min-confidence))
+        preds (store/-list-predicates s {})
+        preds-by-id (into {} (map (juxt :id identity)) preds)
+        watched (->> preds
+                     (filter #(or (:exclusion-group %)
+                                  (= :exclusive (:value-exclusivity %))
+                                  (= :decision (:category %))))
+                     (mapv :id))
+        ;; two-step candidate fetch: watched facts find the interesting
+        ;; subjects; those subjects' FULL out-fact sets (any predicate) give
+        ;; the cross-predicate clause its partners. Bounded by subjects
+        ;; holding decision-shaped facts, never the graph.
+        seeds (if (seq watched)
+                (store/-select-facts s {:valid-cheap true :predicates watched})
+                [])
+        subject-ids (distinct (map (comp :id :subject) seeds))
+        facts (if (seq subject-ids)
+                (store/-get-facts-for s subject-ids {:direction :out})
+                [])
+        results
+        (mapv (fn [{:keys [fact candidate reason] :as pair}]
+                (let [verdict (parse-judgment
+                               (run (judgment-prompt pair
+                                                     (preds-by-id (:predicate fact))
+                                                     (preds-by-id (:predicate candidate)))))
+                      hit? (#{:contradicts :duplicate :supersedes} (:relation verdict))
+                      plan (when hit? (resolution-plan pair verdict min-confidence))]
+                  (when hit?
+                    (store/-link-conflicts s (:id fact) [(:id candidate)])
+                    (when resolve
+                      (execute-resolution! s at pair plan)))
+                  (cond-> {:fact (fact->summary fact)
+                           :candidate (fact->summary candidate)
+                           :reason reason
+                           :verdict verdict}
+                    hit? (assoc :linked true :plan plan)
+                    (and hit? resolve) (assoc :executed (not= :none (:action plan))))))
+              (logic/conflict-candidates facts preds-by-id at))]
+    {:candidates (count results)
+     :linked (count (filter :linked results))
      :resolved (count (filter :executed results))
      :results results}))

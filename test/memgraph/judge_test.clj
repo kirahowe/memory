@@ -6,6 +6,7 @@
             [clojure.test :refer [deftest is testing]]
             [memgraph.core :as core]
             [memgraph.judge :as judge]
+            [memgraph.store]
             [memgraph.store.memory :as mem]))
 
 (deftest verdict-parsing-is-tolerant
@@ -103,3 +104,57 @@
 (deftest stats-count-open-conflicts
   (let [s (store-with-conflict)]
     (is (= 1 (:open-conflicts (core/stats s))))))
+
+(defn- seeded []
+  (doto (mem/create) (core/seed!)))
+
+(deftest sweep-proposes-judges-and-links
+  (let [s (seeded)]
+    ;; two exclusive preferences: invisible to the write path by design
+    (core/assert-fact s {:subject "fmt" :predicate :core/prefers :object "tabs"})
+    (core/assert-fact s {:subject "fmt" :predicate :core/prefers :object "spaces"})
+    (is (zero? (:open (core/conflicts s))) "value exclusivity is not a write-time concern")
+    (testing "compatible verdicts are dropped silently — a noisy generator mutates nothing"
+      (let [r (judge/sweep-conflicts! s {:judge-fn (verdict-fn :compatible 0.9)})]
+        (is (= 1 (:candidates r)))
+        (is (zero? (:linked r)))
+        (is (zero? (:open (core/conflicts s))))))
+    (testing "a contradicts verdict links into the pipeline for the human"
+      (let [r (judge/sweep-conflicts! s {:judge-fn (verdict-fn :contradicts 0.95)})]
+        (is (= 1 (:linked r)))
+        (is (zero? (:resolved r)) "contradictions are never auto-resolved, even swept ones")
+        (is (= 1 (:open (core/conflicts s))))))
+    (testing "linked pairs are not proposed again"
+      (is (zero? (:candidates (judge/sweep-conflicts!
+                               s {:judge-fn (verdict-fn :contradicts 0.95)})))))))
+
+(deftest sweep-catches-decision-vs-structure
+  (let [s (seeded)]
+    (core/assert-fact s {:subject "memgraph" :predicate :core/decided-against
+                         :object "KuzuDB" :object-kind :literal})
+    (core/assert-fact s {:subject "memgraph" :predicate :core/depends-on :object "kuzu-db"})
+    (is (zero? (:open (core/conflicts s)))
+        "depends-on is in no exclusion group — conservative groups stay quiet at write")
+    (let [r (judge/sweep-conflicts! s {:judge-fn (verdict-fn :contradicts 0.9)})]
+      (is (= 1 (:candidates r)))
+      (is (= "cross-predicate" (name (get-in r [:results 0 :reason]))))
+      (is (= 1 (:open (core/conflicts s)))
+          "acting against a standing decision surfaces on the deferred pass"))))
+
+(deftest sweep-resolves-with-the-same-plans
+  (let [s (seeded)
+        last-week (java.util.Date. (- (System/currentTimeMillis) (* 7 86400000)))]
+    ;; backdate the older preference so newer/older is unambiguous
+    (memgraph.store/-insert-fact s {:id "f-tabs" :subject (core/ensure-entity s {:name "fmt"})
+                                    :predicate :core/prefers :object-kind :literal
+                                    :object-lit "tabs" :t-valid last-week :recorded-at last-week
+                                    :confidence 0.8 :epistemic :preference :scope "project"
+                                    :source-type :user-assertion})
+    (core/assert-fact s {:subject "fmt" :predicate :core/prefers :object "spaces"})
+    (let [r (judge/sweep-conflicts! s {:judge-fn (verdict-fn :supersedes 0.9)
+                                       :resolve true})]
+      (is (= 1 (:resolved r))))
+    (let [{:keys [facts]} (core/get-facts s {:entity "fmt"})]
+      (is (= ["spaces"] (mapv :object-lit facts))
+          "the newer preference superseded the older"))
+    (is (zero? (:open (core/conflicts s))))))

@@ -23,6 +23,7 @@
 (defn- facts-for [st entity-ids {:keys [direction predicate]}]
   (let [ids (set entity-ids)
         direction (or direction :out)
+        preds (when predicate (if (coll? predicate) (set predicate) #{predicate}))
         out? #(ids (get-in % [:subject :id]))
         in? #(ids (get-in % [:object-ref :id]))
         dir-pred (case direction
@@ -30,7 +31,7 @@
                    :in in?
                    :both #(or (out? %) (in? %)))]
     (cond->> (filter dir-pred (vals (:facts st)))
-      predicate (filter #(= predicate (:predicate %)))
+      preds (filter (comp preds :predicate))
       true (map #(hydrate st %)))))
 
 (defn- substring-match [q s]
@@ -155,9 +156,10 @@
     (let [st @state]
       (mapv #(hydrate st %) (vals (:facts st)))))
 
-  (-select-facts [_ {:keys [ids source-type scopes episodes recorded-before conflicted valid-cheap]}]
+  (-select-facts [_ {:keys [ids source-type predicates scopes episodes recorded-before conflicted valid-cheap]}]
     (let [st @state
           ids (some-> ids set)
+          predicates (some-> predicates set)
           scopes (some-> scopes set)
           episodes (some-> episodes set)
           cut (some-> ^java.util.Date recorded-before .getTime)
@@ -165,6 +167,7 @@
       (->> (vals (:facts st))
            (filter #(and (or (nil? ids) (ids (:id %)))
                          (or (nil? source-type) (= source-type (:source-type %)))
+                         (or (nil? predicates) (predicates (:predicate %)))
                          (or (nil? scopes) (scopes (:scope %)))
                          (or (nil? episodes) (episodes (:episode %)))
                          (or (nil? cut) (< (ms-of %) cut))

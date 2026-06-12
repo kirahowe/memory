@@ -55,6 +55,77 @@
                              {:fact (candidate {}) :pred (assoc version-pred :cardinality :many)
                               :existing [existing-v1]}))))))
 
+(deftest loose-object-matching
+  (is (logic/same-object-loosely?
+       {:object-kind :entity :object-ref {:name "GraphQL"}}
+       {:object-kind :literal :object-lit "graph-ql"})
+      "entity and literal clothes, same object")
+  (is (not (logic/same-object-loosely?
+            {:object-kind :entity :object-ref {:name "GraphQL"}}
+            {:object-kind :literal :object-lit "REST"}))))
+
+(deftest decide-assert-exclusion-antagonists
+  (let [pred {:id :core/decided-against :cardinality :many :object-kind :either}
+        fact (logic/build-fact {:id "f-new" :now t1 :subject {:id "e1"}
+                                :predicate :core/decided-against
+                                :object-kind :literal :object "GraphQL"
+                                :epistemic :commitment})
+        standing {:id "f-pref" :predicate :core/prefers :object-kind :entity
+                  :object-ref {:id "e9" :name "GraphQL"} :epistemic :preference
+                  :t-valid t0 :confidence 0.8}]
+    (testing "a many-cardinality predicate alone never conflicts"
+      (is (= :insert (:action (logic/decide-assert
+                               {:fact fact :pred pred :existing [] :exclusion []})))))
+    (testing "an exclusion antagonist flags via epistemic composition"
+      (let [d (logic/decide-assert {:fact fact :pred pred :existing []
+                                    :exclusion [standing]})]
+        (is (= :flag (:action d)))
+        (is (= ["f-pref"] (:link d)))))
+    (testing "caller override remains meaningful for a stance change"
+      (is (= :supersede (:action (logic/decide-assert
+                                  {:fact fact :pred pred :existing []
+                                   :exclusion [standing] :on-conflict :supersede})))))))
+
+(deftest conflict-candidate-generation
+  (let [preds {:core/prefers {:id :core/prefers :category :decision
+                              :exclusion-group :stance :value-exclusivity :exclusive}
+               :core/decided-against {:id :core/decided-against :category :decision
+                                      :exclusion-group :stance}
+               :core/depends-on {:id :core/depends-on :category :structural}}
+        f (fn [id pred obj recorded]
+            {:id id :subject {:id "e1" :name "S"} :predicate pred
+             :object-kind :literal :object-lit obj
+             :t-valid t0 :recorded-at recorded :confidence 0.8})
+        facts [(f "f-tabs" :core/prefers "tabs" t0)
+               (f "f-spaces" :core/prefers "spaces" t1)
+               (f "f-dep" :core/depends-on "KuzuDB" t1)
+               (f "f-against" :core/decided-against "kuzu-db" t0)
+               (f "f-dep2" :core/depends-on "Redis" t1)]
+        at #inst "2026-12-01"
+        cands (logic/conflict-candidates facts preds at)
+        by-reason (group-by :reason cands)]
+    (testing "exclusive many-valued pairs are proposed, newer first"
+      (is (= [["f-spaces" "f-tabs"]]
+             (mapv (juxt (comp :id :fact) (comp :id :candidate))
+                   (:exclusive-values by-reason)))))
+    (testing "decision facts sharing an object across predicates are proposed (loose match)"
+      (is (= [["f-dep" "f-against"]]
+             (mapv (juxt (comp :id :fact) (comp :id :candidate))
+                   (:cross-predicate by-reason)))))
+    (testing "accumulative structural facts never pair with each other"
+      (is (= 2 (count cands))))
+    (testing "already-linked pairs are skipped"
+      (let [linked (mapv #(if (= "f-spaces" (:id %)) (assoc % :conflicts ["f-tabs"]) %)
+                         facts)]
+        (is (= [:cross-predicate]
+               (mapv :reason (logic/conflict-candidates linked preds at))))))
+    (testing "different subjects never pair"
+      (let [other (mapv #(if (= "f-against" (:id %))
+                           (assoc % :subject {:id "e2" :name "T"}) %)
+                        facts)]
+        (is (empty? (filter #(= :cross-predicate (:reason %))
+                            (logic/conflict-candidates other preds at))))))))
+
 (deftest decay-plan-is-data
   (let [old #inst "2025-06-01T00:00:00Z"
         facts [{:id "stale" :epistemic :observation :source-type :inferred

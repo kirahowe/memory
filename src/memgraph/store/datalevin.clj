@@ -66,6 +66,8 @@
    :predicate/object-kind {:db/valueType :db.type/keyword}
    :predicate/cardinality {:db/valueType :db.type/keyword}
    :predicate/inverse-of  {:db/valueType :db.type/keyword}
+   :predicate/exclusion-group {:db/valueType :db.type/keyword}
+   :predicate/value-exclusivity {:db/valueType :db.type/keyword}
    :predicate/status      {:db/valueType :db.type/keyword}
    :predicate/replaced-by {:db/valueType :db.type/keyword}
    :predicate/definition  {:db/valueType :db.type/string}
@@ -123,7 +125,9 @@
          :cardinality (:predicate/cardinality m) :inverse-of (:predicate/inverse-of m)
          :status (:predicate/status m) :replaced-by (:predicate/replaced-by m)
          :definition (:predicate/definition m) :maps-to (:predicate/maps-to m)
-         :default-epistemic (:predicate/default-epistemic m)}))
+         :default-epistemic (:predicate/default-epistemic m)
+         :exclusion-group (:predicate/exclusion-group m)
+         :value-exclusivity (:predicate/value-exclusivity m)}))
 
 (defn- strip-nils [m] (into {} (filter (comp some? val)) m))
 
@@ -152,14 +156,15 @@
   the round-trip count is independent of how many ids are passed."
   [db entity-ids direction predicate]
   (let [ids (vec entity-ids)
+        preds (when predicate (if (coll? predicate) (vec predicate) [predicate]))
         out '[?f :fact/subject ?e]
         in '[?f :fact/object-ref ?e]
         runner (fn [clause]
-                 (if predicate
+                 (if preds
                    (d/q [:find [(list 'pull '?f fact-pull) '...]
-                         :in '$ '[?eid ...] '?pred
+                         :in '$ '[?eid ...] '[?pred ...]
                          :where '[?e :entity/id ?eid] clause '[?f :fact/predicate ?pred]]
-                        db ids predicate)
+                        db ids preds)
                    (d/q [:find [(list 'pull '?f fact-pull) '...]
                          :in '$ '[?eid ...]
                          :where '[?e :entity/id ?eid] clause]
@@ -176,7 +181,7 @@
   Binding clauses come first (they ground ?f), predicate clauses after; with
   no binding criterion a grounding clause is prepended so the predicates have
   something to range over."
-  [db {:keys [ids source-type scopes episodes recorded-before conflicted valid-cheap]}]
+  [db {:keys [ids source-type predicates scopes episodes recorded-before conflicted valid-cheap]}]
   (let [acc (cond-> {:where [] :in [] :args []}
               ids (-> (update :where conj '[?f :fact/id ?id])
                       (update :in conj '[?id ...])
@@ -184,6 +189,9 @@
               source-type (-> (update :where conj '[?f :fact/source-type ?st])
                               (update :in conj '?st)
                               (update :args conj source-type))
+              predicates (-> (update :where conj '[?f :fact/predicate ?p])
+                             (update :in conj '[?p ...])
+                             (update :args conj (vec predicates)))
               scopes (-> (update :where conj '[?f :fact/scope ?sc])
                          (update :in conj '[?sc ...])
                          (update :args conj (vec scopes)))
@@ -377,7 +385,9 @@
                          :predicate/replaced-by (:replaced-by pred)
                          :predicate/definition (:definition pred)
                          :predicate/maps-to (:maps-to pred)
-                         :predicate/default-epistemic (:default-epistemic pred)})])
+                         :predicate/default-epistemic (:default-epistemic pred)
+                         :predicate/exclusion-group (:exclusion-group pred)
+                         :predicate/value-exclusivity (:value-exclusivity pred)})])
     pred)
 
   (-search [this query _opts]

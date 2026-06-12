@@ -68,6 +68,15 @@ from the epistemic class:
   new evidence — it surfaces for review.
 - Caller override: `--on-conflict supersede|flag|ignore`.
 - Multi-valued predicates (e.g. `depends-on`) accumulate; exact duplicates no-op.
+- **Exclusion groups** widen detection across predicates: registry rows can
+  declare mutually-exclusive stances toward the same object (`prefers` /
+  `decided-against` share the `:stance` group; `supersedes`/`superseded-by`
+  the `:revision` group), matched loosely across the entity/literal divide —
+  `decided-against "GraphQL"` collides with `prefers GraphQL`. Stance
+  collisions always involve a commitment, so they flag by composition.
+  Groups are deliberately conservative: a false conflict nags the human, so
+  only clearly-opposed pairs are declared; everything fuzzier goes to the
+  sweep.
 
 Flagged conflicts stay open until resolved. `memgraph conflicts` lists them;
 `memgraph judge` runs an LLM over each pair and classifies the relation —
@@ -77,6 +86,16 @@ unlinks compatible pairs, gated by `--min-confidence` (0.8). A `contradicts`
 verdict is never auto-resolved — genuine contradictions always go to the
 human. The judge command is pluggable like the extractor (`--command` /
 `$MEMGRAPH_LLM_CMD`, default `claude -p`).
+
+`memgraph judge --sweep` generates the candidates the write path can't see —
+multiple values of a `:value-exclusivity :exclusive` predicate (two `prefers`
+on one subject tend to be alternatives, not accumulation), and same-subject
+facts sharing an object across predicates where one side is a decision
+(`depends-on X` while `decided-against X` stands). Generation is pure and
+bounded per-subject, never O(graph²); the LLM never runs on the write path.
+Verdicts feed the same pipeline: compatible pairs are dropped silently,
+genuine hits are linked, contradictions wait for the human. `consolidate`
+runs the sweep as a stage.
 
 ## The vocabulary
 
