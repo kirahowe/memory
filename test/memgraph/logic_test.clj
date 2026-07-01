@@ -126,6 +126,27 @@
         (is (empty? (filter #(= :cross-predicate (:reason %))
                             (logic/conflict-candidates other preds at))))))))
 
+(deftest valid-time-in-plans
+  (testing "supersede closes predecessors at the successor's valid-from"
+    (let [d (logic/decide-assert {:fact (candidate {:t-valid #inst "2026-03-01T00:00:00Z"})
+                                  :pred version-pred :existing [existing-v1]})]
+      (is (= :supersede (:action d)))
+      (is (= #inst "2026-03-01T00:00:00Z" (:effective-at d)))))
+  (testing "a successor starting before its predecessor flags, never inverts"
+    (let [d (logic/decide-assert {:fact (candidate {:t-valid #inst "2025-06-01T00:00:00Z"})
+                                  :pred version-pred :existing [existing-v1]})]
+      (is (= :flag (:action d)))
+      (is (= :backdated-overlap (:reason d)))))
+  (testing "closed past intervals build; inverted ones fail"
+    (is (= t0 (:t-invalid (candidate {:t-valid #inst "2025-06-01T00:00:00Z"
+                                      :t-invalid t0}))))
+    (is (thrown? clojure.lang.ExceptionInfo (candidate {:t-valid t1 :t-invalid t0}))))
+  (testing "ingest payloads carry valid time as ISO strings"
+    (is (= #inst "2026-01-01T00:00:00Z"
+           (:t-valid (logic/normalize-ingest-fact {:valid-from "2026-01-01"}))))
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (logic/normalize-ingest-fact {:valid-from "not-a-date"})))))
+
 (deftest decay-plan-is-data
   (let [old #inst "2025-06-01T00:00:00Z"
         facts [{:id "stale" :epistemic :observation :source-type :inferred

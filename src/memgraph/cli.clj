@@ -21,11 +21,7 @@
 (defn- emit [opts data]
   (println (json/generate-string data {:pretty (boolean (:pretty opts))})))
 
-(defn- parse-time [s]
-  (when s
-    (let [s (str s)
-          iso (if (re-matches #"\d{4}-\d{2}-\d{2}" s) (str s "T00:00:00Z") s)]
-      (java.util.Date/from (java.time.Instant/parse iso)))))
+(defn- parse-time [s] (logic/parse-instant s))
 
 (defn- open-store [opts]
   (let [open (requiring-resolve 'memgraph.store.datalevin/open-store)
@@ -60,7 +56,8 @@
                                                        :epistemic :scope :confidence
                                                        :source-type :episode :on-conflict])
                                          (assoc :epistemic (or (:class opts) (:epistemic opts))
-                                                :t-valid (parse-time (:valid-from opts)))))))))
+                                                :t-valid (parse-time (:valid-from opts))
+                                                :t-invalid (parse-time (:valid-until opts)))))))))
 
 (defn cmd-facts [{:keys [opts]}]
   (with-store opts
@@ -91,7 +88,8 @@
 
 (defn cmd-invalidate [{:keys [opts]}]
   (with-store opts
-    (fn [s] (emit opts (core/invalidate s (select-keys opts [:fact-id :reason]))))))
+    (fn [s] (emit opts (core/invalidate s (assoc (select-keys opts [:fact-id :reason])
+                                                 :at (parse-time (:at opts))))))))
 
 (defn cmd-conflicts [{:keys [opts]}]
   (with-store opts
@@ -220,7 +218,14 @@ Commands:
                         [--subject-type T] [--object-type T] [--object-kind entity|literal]
                         [--class observation|commitment|preference] [--scope SCOPE]
                         [--confidence 0.9] [--source-type code|user-assertion|inferred|decision-record|session-log]
-                        [--episode ID] [--on-conflict supersede|flag|ignore] [--valid-from ISO]
+                        [--episode ID] [--on-conflict supersede|flag|ignore]
+                        [--valid-from ISO] [--valid-until ISO]
+                        Valid time is first-class: --valid-from/--valid-until
+                        record when a fact was true (a closed past interval is
+                        one assertion). Superseding closes the predecessor at
+                        the successor's valid-from; a successor starting
+                        at-or-before its predecessor flags as backdated-overlap
+                        instead of inverting an interval.
   facts               Facts about an entity: --entity E [--predicate P] [--scope S]
                         [--as-of ISO] [--direction out|in|both] [--include-invalidated]
                         [--min-confidence 0.5]
@@ -228,6 +233,7 @@ Commands:
   history             All versions of (subject, predicate): --subject S --predicate P
   search              Full-text search: memgraph search \"redis migration\"
   invalidate          Close a fact's validity interval: --fact-id F [--reason R]
+                        [--at ISO] (when it stopped being true; default now)
   conflicts           List open conflicts (flagged facts with still-valid candidates)
   judge               LLM-judge open conflicts: relation contradicts|duplicate|
                         supersedes|compatible per pair. Reports only, unless

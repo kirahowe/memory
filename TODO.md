@@ -26,8 +26,15 @@ Remaining roadmap, in rough priority order. Rationale for most items lives in
       ingest routes such facts to the error bucket. The extraction prompt
       carries a bounded known-entity roster (top by usage, with aliases) as
       a prior, so the LLM reuses exact names instead of coining synonyms.
-- [ ] 5. Valid time on writes: no `--valid-until`; supersede always closes at
-      now, so "true until March, recorded in June" isn't expressible.
+- [x] 5. Valid time first-class on writes (Level 1): supersede closes the
+      predecessor at the successor's valid-from (abutting intervals — as-of
+      between two versions returns exactly one); `--valid-until` records a
+      closed past interval in one assertion; `invalidate --at` says when a
+      fact stopped being true. Inverted intervals are rejected; backdated
+      overlaps flag into the conflict pipeline instead of inverting. Level 2
+      (transaction-time retraction history, the XTDB model) deliberately out
+      of scope — `recorded-at`/`recorded-ms` stay the append-only hook if
+      ever needed.
 - [ ] 6. Decay is age-based only: reads bump nothing, so a hot fact decays
       like a dead one. Original intent was confidence decay on
       *un-referenced* facts.

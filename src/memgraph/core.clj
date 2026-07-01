@@ -238,20 +238,23 @@
 ;; assert-fact: gather -> decide (pure) -> execute
 ;; ---------------------------------------------------------------------------
 
-(defn- execute-assert! [s at {:keys [action fact existing invalidate link candidates]}]
+(defn- execute-assert! [s {:keys [action fact existing invalidate link candidates
+                                  effective-at reason]}]
   (case action
     :noop {:status :noop :fact existing}
     :insert {:status :created :fact (store/-insert-fact s fact)}
     :supersede (do (doseq [id invalidate]
-                     (store/-invalidate s id at (str "superseded by " (:id fact))))
+                     (store/-invalidate s id effective-at
+                                        (str "superseded by " (:id fact))))
                    {:status :superseded
                     :fact (store/-insert-fact s fact)
                     :superseded invalidate})
     :flag (let [inserted (store/-insert-fact s fact)]
             (store/-link-conflicts s (:id inserted) link)
-            {:status :flagged
-             :fact (assoc inserted :conflicts link)
-             :candidates candidates})))
+            (cond-> {:status :flagged
+                     :fact (assoc inserted :conflicts link)
+                     :candidates candidates}
+              reason (assoc :reason reason)))))
 
 (defn assert-fact
   "Insert a fact with full validation and conflict resolution.
@@ -259,14 +262,16 @@
   opts: :subject :subject-type :subject-scope
         :predicate :object :object-type :object-scope :object-kind
         :epistemic :scope :confidence :source-type :episode
-        :on-conflict (:supersede | :flag | :ignore) :t-valid
+        :on-conflict (:supersede | :flag | :ignore)
+        :t-valid :t-invalid (valid time, both ends; defaults: now, open)
 
   Returns {:status :created|:noop|:superseded|:flagged
            :fact <fact>
            :superseded [ids] / :candidates [conflicting facts]}"
   [s {:keys [subject subject-type subject-scope predicate
              object object-type object-scope object-kind
-             epistemic scope confidence source-type episode on-conflict t-valid]}]
+             epistemic scope confidence source-type episode on-conflict
+             t-valid t-invalid]}]
   (when (str/blank? (str object))
     (logic/fail "Object required" {:type :missing-object}))
   (let [pred-id (resolve-predicate-id s predicate)
@@ -287,6 +292,7 @@
                                 :object-ref obj-ent
                                 :object object
                                 :t-valid t-valid
+                                :t-invalid t-invalid
                                 :confidence confidence
                                 :epistemic (logic/resolve-epistemic pred (logic/->kw epistemic))
                                 :scope scope
@@ -304,7 +310,7 @@
                                                      (into [pred-id] group-mates)
                                                      pred-id)})
                      (filterv #(logic/fact-valid-at? % t-now)))]
-    (execute-assert! s t-now
+    (execute-assert! s
                      (logic/decide-assert {:fact fact
                                            :pred pred
                                            :existing (filterv #(= pred-id (:predicate %)) fetched)
@@ -389,11 +395,22 @@
     {:open (count open)
      :conflicts open}))
 
-(defn invalidate [s {:keys [fact-id reason]}]
+(defn invalidate
+  "Close a fact's validity interval. :at is the valid-time end — when it
+  stopped being true, not merely when we noticed; defaults to now."
+  [s {:keys [fact-id reason at]}]
   (when (str/blank? (str fact-id))
     (logic/fail "fact-id required" {:type :missing-fact-id}))
-  (store/-invalidate s fact-id (now) (or reason "manually invalidated"))
-  {:status :invalidated :fact-id fact-id})
+  (let [f (first (store/-select-facts s {:ids [fact-id]}))
+        at (or at (now))]
+    (when-not f
+      (logic/fail (str "Fact not found: " fact-id)
+                  {:type :fact-not-found :fact-id fact-id}))
+    (when (< (logic/ms at) (logic/ms (:t-valid f)))
+      (logic/fail "Invalid interval: the fact starts after the requested end"
+                  {:type :invalid-interval :t-valid (:t-valid f) :at at}))
+    (store/-invalidate s fact-id at (or reason "manually invalidated"))
+    {:status :invalidated :fact-id fact-id :at at}))
 
 ;; ---------------------------------------------------------------------------
 ;; Episodes & ingestion

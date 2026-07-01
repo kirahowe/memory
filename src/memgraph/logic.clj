@@ -45,12 +45,34 @@
   [m]
   (into {} (map (fn [[k v]] [(keyword (str/replace (name k) "_" "-")) v])) m))
 
+(defn parse-instant
+  "ISO date or instant string -> java.util.Date (dates get midnight UTC).
+  Dates pass through; unparseable input fails deterministically."
+  [v]
+  (cond
+    (instance? java.util.Date v) v
+    (nil? v) nil
+    :else
+    (let [s (str/trim (str v))]
+      (when (seq s)
+        (let [iso (if (re-matches #"\d{4}-\d{2}-\d{2}" s) (str s "T00:00:00Z") s)]
+          (try (java.util.Date/from (java.time.Instant/parse iso))
+               (catch Exception _
+                 (fail (str "Unparseable instant: " v)
+                       {:type :invalid-instant :value v}))))))))
+
 (defn normalize-ingest-fact
-  "Ingest payloads may say :class where the API says :epistemic."
+  "Ingest payloads may say :class where the API says :epistemic, and
+  :valid-from/:valid-until as ISO strings where the API says
+  :t-valid/:t-invalid as dates."
   [m]
-  (-> m
-      (update :epistemic #(or % (:class m)))
-      (dissoc :class)))
+  (let [tv (or (:t-valid m) (parse-instant (:valid-from m)))
+        ti (or (:t-invalid m) (parse-instant (:valid-until m)))]
+    (cond-> (-> m
+                (update :epistemic #(or % (:class m)))
+                (dissoc :class :valid-from :valid-until))
+      tv (assoc :t-valid tv)
+      ti (assoc :t-invalid ti))))
 
 ;; ---------------------------------------------------------------------------
 ;; Assertion decisions
@@ -82,25 +104,36 @@
       (fail (str "Unknown epistemic class " e)
             {:type :invalid-epistemic :given e :allowed epistemic-classes}))))
 
+(defn valid-interval-ok?
+  "A valid-time interval is open (:t-invalid nil) or strictly positive."
+  [{:keys [t-valid t-invalid]}]
+  (or (nil? t-invalid) (< (ms t-valid) (ms t-invalid))))
+
 (defn build-fact
   "Assemble the candidate fact. :id and :now are supplied by the shell so
-  this stays deterministic."
+  this stays deterministic. :t-valid/:t-invalid make valid time first-class
+  on both ends — a closed past interval (\"true Jan through March\") is one
+  fact. Inverted intervals fail here."
   [{:keys [id now subject predicate object-kind object-ref object
-           t-valid confidence epistemic scope source-type episode]}]
-  {:id id
-   :subject subject
-   :predicate predicate
-   :object-kind object-kind
-   :object-ref object-ref
-   :object-lit (when (= :literal object-kind) (str object))
-   :t-valid (or t-valid now)
-   :t-invalid nil
-   :recorded-at now
-   :confidence (double (or confidence 0.8))
-   :epistemic epistemic
-   :scope (or scope default-scope)
-   :source-type (or source-type :user-assertion)
-   :episode episode})
+           t-valid t-invalid confidence epistemic scope source-type episode]}]
+  (let [t-valid (or t-valid now)]
+    (when-not (valid-interval-ok? {:t-valid t-valid :t-invalid t-invalid})
+      (fail "Invalid interval: valid-until must be after valid-from"
+            {:type :invalid-interval :t-valid t-valid :t-invalid t-invalid}))
+    {:id id
+     :subject subject
+     :predicate predicate
+     :object-kind object-kind
+     :object-ref object-ref
+     :object-lit (when (= :literal object-kind) (str object))
+     :t-valid t-valid
+     :t-invalid t-invalid
+     :recorded-at now
+     :confidence (double (or confidence 0.8))
+     :epistemic epistemic
+     :scope (or scope default-scope)
+     :source-type (or source-type :user-assertion)
+     :episode episode}))
 
 (defn- same-object-pred [fact]
   (if (= :entity (:object-kind fact))
@@ -127,8 +160,9 @@
 
     {:action :noop      :existing fact}
     {:action :insert    :fact fact}
-    {:action :supersede :fact fact :invalidate [fact-ids]}
-    {:action :flag      :fact fact :link [fact-ids] :candidates [facts]}"
+    {:action :supersede :fact fact :invalidate [fact-ids] :effective-at inst}
+    {:action :flag      :fact fact :link [fact-ids] :candidates [facts]
+                        (:reason :backdated-overlap when time-inverted)}"
   [{:keys [fact pred existing exclusion on-conflict]}]
   (let [same? (same-object-pred fact)
         duplicate (first (filter same? existing))
@@ -140,11 +174,24 @@
       {:action :noop :existing duplicate}
 
       (seq conflicting)
-      (case (conflict-policy (:epistemic fact) conflicting on-conflict)
-        :supersede {:action :supersede :fact fact :invalidate (mapv :id conflicting)}
-        :flag {:action :flag :fact fact
-               :link (mapv :id conflicting) :candidates conflicting}
-        :ignore {:action :insert :fact fact})
+      (let [effective-at (:t-valid fact)
+            inverted? (some #(> (ms (:t-valid %)) (ms effective-at)) conflicting)]
+        (case (conflict-policy (:epistemic fact) conflicting on-conflict)
+          ;; clean succession: the new truth begins exactly where the old one
+          ;; ends, so predecessors close at the successor's valid-from. Equal
+          ;; starts leave the predecessor an empty interval (immediately
+          ;; replaced, never observably valid). A successor starting strictly
+          ;; before a predecessor is a backdated overlap — a valid-time
+          ;; contradiction, never silently inverted; it takes the flag path.
+          :supersede (if inverted?
+                       {:action :flag :fact fact :reason :backdated-overlap
+                        :link (mapv :id conflicting) :candidates conflicting}
+                       {:action :supersede :fact fact
+                        :invalidate (mapv :id conflicting)
+                        :effective-at effective-at})
+          :flag {:action :flag :fact fact
+                 :link (mapv :id conflicting) :candidates conflicting}
+          :ignore {:action :insert :fact fact}))
 
       :else
       {:action :insert :fact fact})))

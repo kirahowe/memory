@@ -178,6 +178,74 @@
       (is (= ["Postgres"] (mapv #(get-in % [:object-ref :name]) then)))
       (is (= ["CockroachDB"] (mapv #(get-in % [:object-ref :name]) now*))))))
 
+(deftest valid-time-supersession
+  (with-stores [s]
+    (core/assert-fact s {:subject "memgraph" :predicate :core/has-version :object "1.0"
+                         :t-valid (date "2026-01-01T00:00:00Z")})
+    (is (= :superseded (:status (core/assert-fact s {:subject "memgraph"
+                                                     :predicate :core/has-version
+                                                     :object "2.0"
+                                                     :t-valid (date "2026-03-01T00:00:00Z")}))))
+    (testing "as-of between two versions returns exactly one"
+      (is (= ["1.0"] (mapv :object-lit (:facts (core/get-facts s {:entity "memgraph"
+                                                                  :as-of (date "2026-02-01T00:00:00Z")})))))
+      (is (= ["2.0"] (mapv :object-lit (:facts (core/get-facts s {:entity "memgraph"
+                                                                  :as-of (date "2026-04-01T00:00:00Z")}))))))
+    (testing "the intervals abut: predecessor closes at the successor's valid-from"
+      (let [{:keys [history]} (core/get-history s {:subject "memgraph"
+                                                   :predicate :core/has-version})
+            v1 (first (filter #(= "1.0" (:object-lit %)) history))]
+        (is (= (date "2026-03-01T00:00:00Z") (:t-invalid v1)))))))
+
+(deftest backdated-supersede-flags
+  (with-stores [s]
+    (core/assert-fact s {:subject "svc" :predicate :core/has-version :object "2.0"
+                         :t-valid (date "2026-03-01T00:00:00Z")})
+    (let [r (core/assert-fact s {:subject "svc" :predicate :core/has-version :object "1.0"
+                                 :t-valid (date "2026-01-01T00:00:00Z")})]
+      (is (= :flagged (:status r)))
+      (is (= :backdated-overlap (:reason r)))
+      (is (= ["2.0"] (mapv :object-lit (:candidates r)))))
+    (testing "no interval was inverted"
+      (let [{:keys [history]} (core/get-history s {:subject "svc"
+                                                   :predicate :core/has-version})]
+        (is (every? #(or (nil? (:t-invalid %))
+                         (< (.getTime ^java.util.Date (:t-valid %))
+                            (.getTime ^java.util.Date (:t-invalid %))))
+                    history))))))
+
+(deftest closed-past-intervals
+  (with-stores [s]
+    (is (= :created (:status (core/assert-fact s {:subject "svc" :predicate :core/deployed-via
+                                                  :object "Heroku" :object-kind :literal
+                                                  :t-valid (date "2026-01-01T00:00:00Z")
+                                                  :t-invalid (date "2026-03-01T00:00:00Z")})))
+        "a closed past interval is one assertion")
+    (is (= ["Heroku"] (mapv :object-lit (:facts (core/get-facts s {:entity "svc"
+                                                                   :as-of (date "2026-02-01T00:00:00Z")})))))
+    (is (empty? (:facts (core/get-facts s {:entity "svc"}))) "already over by now")
+    (testing "inverted intervals are rejected"
+      (is (thrown? clojure.lang.ExceptionInfo
+                   (core/assert-fact s {:subject "svc" :predicate :core/deployed-via
+                                        :object "X" :object-kind :literal
+                                        :t-valid (date "2026-03-01T00:00:00Z")
+                                        :t-invalid (date "2026-01-01T00:00:00Z")}))))
+    (testing "manual invalidate takes an effective date, guarded"
+      (core/assert-fact s {:subject "svc" :predicate :core/has-version :object "3.0"
+                           :t-valid (date "2026-01-01T00:00:00Z")})
+      (let [fid (:id (first (:facts (core/get-facts s {:entity "svc"
+                                                       :predicate :core/has-version}))))]
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (core/invalidate s {:fact-id fid :at (date "2025-12-01T00:00:00Z")}))
+            "closing a fact before it starts is rejected")
+        (is (thrown? clojure.lang.ExceptionInfo
+                     (core/invalidate s {:fact-id "f-missing"})))
+        (core/invalidate s {:fact-id fid :at (date "2026-02-01T00:00:00Z") :reason "sunset"})
+        (is (empty? (:facts (core/get-facts s {:entity "svc" :predicate :core/has-version
+                                               :as-of (date "2026-02-15T00:00:00Z")}))))
+        (is (= 1 (count (:facts (core/get-facts s {:entity "svc" :predicate :core/has-version
+                                                   :as-of (date "2026-01-15T00:00:00Z")})))))))))
+
 (deftest neighborhood-bfs
   (with-stores [s]
     (core/assert-fact s {:subject "A" :predicate :core/depends-on :object "B"})

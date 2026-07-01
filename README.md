@@ -41,6 +41,10 @@ bin/memgraph assert --subject api-layer --predicate decided-against \
 bin/memgraph assert --subject AuthService --predicate prefers \
   --object "Result types over exceptions" --class preference
 
+# Valid time is first-class on both ends: record history as it happened
+bin/memgraph assert --subject svc --predicate deployed-via --object Heroku \
+  --object-kind literal --valid-from 2026-01-01 --valid-until 2026-03-01
+
 # Query
 bin/memgraph facts --entity AuthService --pretty
 bin/memgraph facts --entity memgraph.store --direction in     # who depends on it?
@@ -60,9 +64,12 @@ When a new fact contradicts a currently-valid fact with the same
 (subject, predicate) on a single-valued predicate, the resolution defaults
 from the epistemic class:
 
-- **observation / preference → supersede.** The old fact's interval is closed
-  (non-lossy — it stays in history); the new fact becomes current. Code-derived
-  facts auto-update when the code changes.
+- **observation / preference → supersede.** The predecessor's interval closes
+  at the successor's `--valid-from` (non-lossy — it stays in history), so the
+  new truth begins exactly where the old one ends and `--as-of` between two
+  versions returns exactly one. A successor backdated to start *before* its
+  predecessor is a valid-time contradiction, not a handoff — it flags as
+  `backdated-overlap` instead of inverting an interval.
 - **commitment → flag.** Both facts stay valid, the conflict is linked and the
   `candidates` are returned. A human decision is never silently overwritten by
   new evidence — it surfaces for review.
@@ -143,6 +150,10 @@ CLI / skill front-end        src/memgraph/cli.clj        arg parsing, JSON in/ou
   identically against the in-memory implementation, which is the proof of it.
 - **Bi-temporality is modeled, not engine-native**: explicit `t-valid` /
   `t-invalid` / `recorded-at` attributes, identical in shape across backends.
+  Valid time is settable on both ends of every write; transaction time
+  (`recorded-at`) is append-only. Full XTDB-style correction history
+  (auditing how a belief about the past evolved) is deliberately out of
+  scope.
 - **Objects are entities or literals** (RDF-style): traversal only follows
   entity-kind objects; preferences live as literal facts without minting junk
   nodes. Enforced at write time per the predicate registry.
