@@ -1,0 +1,7 @@
+kira: ok, api shape. marco keeps pushing graphql and I want to settle it today.
+marco: I'll die on this hill a little. the storefront queries are exactly the nested-fetch problem graphql was built for.
+kira: and then we own a schema, resolvers, and a caching story that gets weird under pagination. we're three people. I'm saying no. REST, EDN bodies, done.
+marco: fine. but write it down that I objected, future me wants the receipt.
+kira: logged. also I merged the auth work last night. went with argon2 for password hashing, the bcrypt benchmarks on the new boxes were embarrassing.
+marco: works for me. deploys are still heroku?
+kira: yeah, heroku since the fifth. it's fine for now, ask me again when the invoice shows up.

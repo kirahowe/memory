@@ -65,8 +65,22 @@ Remaining roadmap, in rough priority order. Rationale for most items lives in
       unenforced; activate when multi-user.
 - [ ] **Multi-language code ingesters.** `ingest-code` is Clojure-only
       (edamame ns-form parsing); tree-sitter would generalize it.
-- [ ] **Codebase-memory benchmark.** No LongMemEval/LoCoMo equivalent exists
-      for codebase memory — both a validation obstacle and an opportunity.
+- [ ] **Grow the benchmark.** v0 exists (`bb bench`, see README): the shoply
+      fixture, 15 mechanics questions, and the LLM quality layer. Next:
+      run `bb bench llm` against a real model and use the numbers to tune
+      the knobs (session cap, judge gate, half-life); add judge labels
+      beyond contradicts; consider generalizing to a multi-system harness
+      only after it proves out here.
+
+## Done (benchmark)
+
+- [x] Codebase-memory benchmark v0: the shoply fixture timeline (three
+      sessions, three code passes, curation, a migration, standing decisions
+      violated and relitigated), 15 mechanics questions across seven
+      capabilities scored deterministically with recorded LLM outputs
+      (`bb bench`, perfect score enforced in the test suite), plus the LLM
+      quality layer (`bb bench llm`): extraction precision/recall, judge
+      verdict accuracy, fragmentation suspects.
 
 ## Decided against
 

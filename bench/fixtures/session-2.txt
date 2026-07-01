@@ -1,0 +1,6 @@
+kira: postmortem notes from the weekend. the heroku dyno restarts were killing long checkouts, so I finished the fly.io migration tuesday. march 10th, for the log.
+marco: saw it. cold starts already look better on the graphs.
+kira: separate thing. I spent an evening with kuzudb for the graph-shaped cache idea.
+marco: and?
+kira: the repo has been quiet for months and the sponsor archived it. I'm calling it: we don't build on kuzudb. shame, honestly. the query model was nice.
+marco: agreed, that's a pass. put it next to the graphql decision so nobody trips over it later.

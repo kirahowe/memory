@@ -1,5 +1,6 @@
 (ns memgraph.run-tests
   (:require [clojure.test :as t]
+            [memgraph.bench-test]
             [memgraph.code-ingest-test]
             [memgraph.consolidate-test]
             [memgraph.core-test]
@@ -13,5 +14,6 @@
                                           'memgraph.code-ingest-test
                                           'memgraph.session-test
                                           'memgraph.judge-test
-                                          'memgraph.consolidate-test)]
+                                          'memgraph.consolidate-test
+                                          'memgraph.bench-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))

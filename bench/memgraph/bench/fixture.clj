@@ -1,0 +1,139 @@
+(ns memgraph.bench.fixture
+  "The benchmark's synthetic project: shoply, a small webshop evolving over
+  three sessions and three code passes from January to now. The timeline is
+  data; the harness (memgraph.bench) executes it against a real store.
+
+  The recorded extractor/judge/summarizer outputs are what a competent LLM
+  would have returned for these inputs — they make the mechanics layer
+  deterministic. The :expected annotations are the ground truth the LLM
+  layer scores real model output against."
+  (:require [clojure.string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Code steps (written to a temp dir, ingested by the real code ingester)
+;; ---------------------------------------------------------------------------
+
+(def jan-code
+  {"src/shoply/api.clj"  "(ns shoply.api (:require [shoply.auth] [shoply.db]))"
+   "src/shoply/auth.clj" "(ns shoply.auth (:require [shoply.db]))"
+   "src/shoply/db.clj"   "(ns shoply.db)"})
+
+;; March: auth is renamed to identity, api drops its direct db dependency
+;; and picks up the new cache namespace.
+(def march-code
+  {"src/shoply/api.clj"      "(ns shoply.api (:require [shoply.identity] [shoply.cache]))"
+   "src/shoply/identity.clj" "(ns shoply.identity (:require [shoply.db]))"
+   "src/shoply/cache.clj"    "(ns shoply.cache)"
+   "src/shoply/db.clj"       "(ns shoply.db)"})
+
+;; ---------------------------------------------------------------------------
+;; Recorded LLM outputs (mechanics layer)
+;; ---------------------------------------------------------------------------
+
+(def recorded-extractions
+  {"session-1"
+   (str/join "\n"
+             ["{\"subject\":\"shoply\",\"predicate\":\"decided_against\",\"object\":\"GraphQL\",\"object_kind\":\"literal\",\"class\":\"commitment\",\"confidence\":0.9}"
+              "{\"subject\":\"shoply.api\",\"predicate\":\"prefers\",\"object\":\"REST with EDN bodies\",\"class\":\"preference\"}"
+              "{\"subject\":\"shoply.auth\",\"predicate\":\"prefers\",\"object\":\"argon2 for password hashing\",\"class\":\"preference\"}"
+              "{\"subject\":\"shoply\",\"predicate\":\"deployed_via\",\"object\":\"Heroku\",\"object_kind\":\"literal\",\"valid_from\":\"2026-01-05\"}"])
+   "session-2"
+   (str/join "\n"
+             ["{\"subject\":\"shoply\",\"predicate\":\"deployed_via\",\"object\":\"Fly.io\",\"object_kind\":\"literal\",\"valid_from\":\"2026-03-10\"}"
+              "{\"subject\":\"shoply\",\"predicate\":\"decided_against\",\"object\":\"KuzuDB\",\"object_kind\":\"literal\",\"class\":\"commitment\",\"confidence\":0.9}"])
+   "session-3"
+   (str/join "\n"
+             ["{\"subject\":\"shoply\",\"predicate\":\"prefers\",\"object\":\"GraphQL\",\"object_kind\":\"literal\",\"class\":\"preference\"}"
+              "{\"subject\":\"shoply\",\"predicate\":\"depends_on\",\"object\":\"kuzu-db\",\"object_kind\":\"entity\"}"
+              "{\"subject\":\"shoply.cache\",\"predicate\":\"prefers\",\"object\":\"write-through cache strategy\",\"class\":\"preference\"}"])})
+
+(defn recorded-judge
+  "Prompt -> verdict, as a competent judge would rule on this fixture's
+  pairs: depending on a rejected library contradicts the decision; two cache
+  preferences that describe strategy vs a stale habit are compatible."
+  [prompt]
+  (let [p (str/lower-case prompt)]
+    (cond
+      (str/includes? p "kuzu")
+      "{\"relation\":\"contradicts\",\"confidence\":0.9,\"rationale\":\"The project depends on a library it decided against.\"}"
+
+      (str/includes? p "write-through")
+      "{\"relation\":\"compatible\",\"confidence\":0.85,\"rationale\":\"A strategy preference and a stale observation can coexist.\"}"
+
+      :else
+      "{\"relation\":\"contradicts\",\"confidence\":0.9,\"rationale\":\"Opposed stances toward the same object.\"}")))
+
+(defn recorded-summarizer [prompt]
+  (let [p (str/lower-case prompt)]
+    (cond
+      (str/includes? p "argon2")
+      "Settled the API question: GraphQL rejected, REST with EDN bodies chosen. Auth landed with argon2 for password hashing. Deploys on Heroku since Jan 5."
+
+      (str/includes? p "fly.io")
+      "Moved hosting from Heroku to Fly.io on March 10 after dyno restarts hurt checkouts. Evaluated KuzuDB for the graph cache and rejected it as unmaintained."
+
+      :else
+      "A GraphQL adoption push resurfaced against the January decision. A kuzu-db adapter was spiked despite the standing rejection. New preference: write-through cache strategy for shoply.cache.")))
+
+;; ---------------------------------------------------------------------------
+;; The timeline
+;; ---------------------------------------------------------------------------
+
+(def steps
+  [{:op :code :files jan-code :label "january code"}
+   {:op :assert :args {:subject "shoply" :subject-type :project
+                       :predicate :core/has-version :object "0.1.0"
+                       :valid-from "2026-01-05"}}
+   {:op :session :ref "session-1" :resource "fixtures/session-1.txt"}
+
+   {:op :code :files march-code :label "march code (auth renamed, deps changed)"}
+   {:op :merge :from "shoply.auth" :into "shoply.identity"}
+   {:op :assert :args {:subject "shoply" :predicate :core/has-version
+                       :object "0.2.0" :valid-from "2026-03-10"}}
+   {:op :session :ref "session-2" :resource "fixtures/session-2.txt"}
+   {:op :invalidate-object :entity "shoply" :predicate :core/deployed-via
+    :object-lit "Heroku" :at "2026-03-10" :reason "migrated to Fly.io"}
+
+   ;; a session-era observation nobody ever restated, aged two half-lives
+   {:op :raw-fact :days-ago 180
+    :fact {:subject-name "shoply.cache" :predicate :core/prefers
+           :object-kind :literal :object-lit "manual cache invalidation everywhere"
+           :confidence 0.8 :epistemic :preference :source-type :inferred
+           :scope "project"}}
+
+   {:op :session :ref "session-3" :resource "fixtures/session-3.txt"}
+   {:op :code :files march-code :label "june code (unchanged; reinforces)"}
+   {:op :consolidate}])
+
+;; ---------------------------------------------------------------------------
+;; Ground truth for the LLM layer
+;; ---------------------------------------------------------------------------
+
+(def expected-triples
+  "Per session: the set of (subject, predicate, object) a good extraction
+  contains, in normalized form. Scored as precision/recall against real
+  model output."
+  {"session-1" #{["shoply" "decided-against" "graphql"]
+                 ["shoplyapi" "prefers" "restwithednbodies"]
+                 ["shoplyauth" "prefers" "argon2forpasswordhashing"]
+                 ["shoply" "deployed-via" "heroku"]}
+   "session-2" #{["shoply" "deployed-via" "flyio"]
+                 ["shoply" "decided-against" "kuzudb"]}
+   "session-3" #{["shoply" "prefers" "graphql"]
+                 ["shoply" "depends-on" "kuzudb"]
+                 ["shoplycache" "prefers" "writethroughcachestrategy"]}})
+
+(def conflict-labels
+  "Open conflict pairs at the end of the timeline, keyed by the normalized
+  object both sides share, with the verdict a correct judge returns."
+  {"graphql" :contradicts
+   "kuzudb"  :contradicts})
+
+(def known-entity-names
+  "Canonical entities the finished graph contains. LLM extraction that
+  coins a subject or entity-object normalizing to none of these is a
+  fragmentation suspect."
+  #{"shoply" "shoplyapi" "shoplyauth" "shoplyidentity" "shoplycache" "shoplydb"
+    "kuzudb" "graphql" "heroku" "flyio"
+    "srcshoplyapiclj" "srcshoplyauthclj" "srcshoplyidentityclj"
+    "srcshoplycacheclj" "srcshoplydbclj"})

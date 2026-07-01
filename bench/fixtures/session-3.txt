@@ -1,0 +1,6 @@
+priya: new here, so maybe this is settled, but the mobile team asked me about graphql again and honestly I think shoply should adopt it.
+kira: we ruled that out in january. check the decision log before we relitigate, it's all in there.
+priya: will do. unrelated: I spiked a kuzu-db adapter for the cache experiment over the weekend. it works, sort of. two of the joins are slow but the shape is right.
+kira: hm. we need to talk about that one, there's history.
+priya: also, for shoply.cache I want a write-through cache strategy instead of the ad-hoc invalidation we have now. that part I feel strongly about.
+kira: that part I like. write it up.

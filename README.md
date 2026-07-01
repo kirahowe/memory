@@ -234,6 +234,32 @@ scans never reinforce — only intent writes do.
 - `dump` — export everything as JSONL: the portability story. The live LMDB
   directory is gitignored; the dump is the committable artifact.
 
+## Benchmark
+
+No LongMemEval/LoCoMo equivalent exists for codebase memory, so `bench/` is
+the seed of one: a synthetic project (shoply) that lives through three
+sessions and three code passes from January to now — decisions made and
+relitigated, a namespace renamed and merged, a hosting migration, a
+dependency taken up against a standing rejection, an observation nobody ever
+restates. Two layers, split by determinism:
+
+```bash
+bb bench       # mechanics: recorded LLM outputs, real store and ingesters,
+               # 15 questions across retrieval / time-travel / history /
+               # identity / conflicts / forgetting / provenance.
+               # Deterministic; non-zero exit below a perfect score, and it
+               # runs in the test suite as a longitudinal regression gate.
+bb bench llm   # quality: the same graph, a real model ($MEMGRAPH_LLM_CMD).
+               # Measures extraction precision/recall against annotated
+               # transcripts, judge verdict accuracy on labeled conflict
+               # pairs, and entity fragmentation (suspect names that
+               # normalization can't rescue). Informational; never in CI.
+```
+
+`MEMGRAPH_BENCH_STORE=memory` runs mechanics pod-free. Fixture, questions,
+and ground truth live in `bench/`; the harness drives the same core API the
+CLI uses, so an MCP front-end won't invalidate it.
+
 ## Tests
 
 ```bash
