@@ -65,9 +65,11 @@ updates), MemGrad (textual gradients over agentic *software development*),
 EcphoryRAG, CraniMem, MIRROR, ENGRAM, CloneMem, and a survey (*From Storage
 to Experience*). Full list in Appendix B.
 
-Notably: **not one accepted paper defends the markdown-context-file status
-quo** — and the one paper that tested it (AGENTS.md, an oral) found it
-actively counterproductive.
+Notably: **not one accepted paper defends the status quo of agent-maintained
+markdown files** — the one paper that tested static context files (AGENTS.md,
+an oral) found them actively counterproductive, and the write-path papers
+(A-MAC, TierMem, the freshness line of work) are each, implicitly, a case
+against in-place-mutated notes as a memory substrate.
 
 -----
 
@@ -77,18 +79,41 @@ The 2026 literature converged, from several directions, on positions this
 design took in advance. Worth stating plainly because it means the core is
 sound:
 
-**The markdown-pile critique is now measured, not just argued.** The
-AGENTS.md oral is the single most consequential result for this project:
-repo context files — the thing memgraph exists to replace — deliver *zero*
-task-success improvement at +20% inference cost, because blanket-injected
-context imposes requirements that aren't relevant to the task at hand. Note
-carefully what this validates: not "structured memory wins" but "**selective,
-on-demand memory** wins over always-injected context." memgraph's
-query-at-need read model (consult `facts`/`search` when touching an entity)
-is on the right side of that line; a hypothetical "dump the graph into the
-prompt" mode would not be. The same result also sets the bar: a memory system
-must demonstrate *net* task improvement after its own overhead — which no
-context-file approach has done.
+**The incumbent — agent-maintained markdown memory — now has measured
+failure modes on both of its halves.** To be precise about the target:
+memgraph's competitor is not so much hand-authored `AGENTS.md` (which it
+will likely obviate in passing) as **auto-memory** — the pattern, now
+shipping in Claude Code, where the agent itself accumulates markdown files
+scattered across memory directories and *updates them in place* over time.
+The 2026 literature dismantles that pattern on two independent axes.
+
+*The injection half:* the AGENTS.md oral shows ambient repository context,
+loaded regardless of the task at hand, delivers zero task-success gain at
++20% inference cost — and auto-memory is ambient injection too; its files
+load at session start whether or not they bear on the work. What this
+validates is not "structured memory wins" but "**selective, on-demand
+memory** wins over always-injected context." memgraph's query-at-need read
+model is on the right side of that line; a hypothetical "dump the graph into
+the prompt" mode would not be.
+
+*The write half:* in-place updates are an ungated LLM-driven write path that
+destroys its own history — the precise design the field spent 2026 arguing
+against. The freshness result (+10.8pp for deterministic versioning over
+LLM-mediated updates) says the LLM shouldn't adjudicate what's current;
+A-MAC says unscored admission hoards hallucinated and obsolete facts;
+TierMem says a lossy rewrite whose source evidence is gone leaves omissions
+*unverifiable*; and the A-MEM line of critique (self-modifying notes) named
+the drift problem years ago: memory that rewrites itself under its own
+influence, with no provenance guarantees. An in-place-edited markdown file
+can't answer "what did we believe before, and why did it change" — it can't
+even show *that* it changed. MINJA lands squarely on this surface as well:
+auto-memory writes whatever sessions contain, with no admission gate, no
+confidence ceiling, and no epistemic distinction between a passing remark
+and a standing decision. memgraph's design answers each point one-for-one:
+writes are typed and policy-gated, mutation is supersession with history,
+commitments can't be silently rewritten, and injection is replaced by
+query-at-need. The AGENTS.md result also sets the bar the replacement must
+clear: demonstrated *net* task improvement after its own overhead (§4.3).
 
 **Bi-temporal KG with invalidate-don't-delete is the winning structure for
 update-heavy recall.** The SJTU "agent-native memory" study
@@ -381,14 +406,20 @@ is differentiated in a way LoCoMo-style recall numbers no longer are
 ### 4.3 Concrete plan, in order of value
 
 1. **End-task A/B on real tasks (the only metric that ultimately matters).**
-   Adopt the AGENTS.md study's protocol: same tasks, same agent, three arms —
-   no memory, CLAUDE.md-style context file, memgraph skill — on a repo with
-   seeded history (SWE-ContextBench's related-task pairs are the task
-   source model). Measure task success, tokens, wall-clock, and
+   Adopt the AGENTS.md study's protocol: same tasks, same agent, four arms —
+   no memory · static context file · **auto-memory (agent-maintained
+   markdown, in-place updates — the actual incumbent)** · memgraph skill —
+   on a repo with seeded history (SWE-ContextBench's related-task pairs are
+   the task source model). Measure task success, tokens, wall-clock, and
    re-litigation counts (standing `decided-against` decisions proposed
-   again). The AGENTS.md result sets the bar *and* the framing: context
-   files fail this test; a memory system that passes it has a
-   headline. Even n=20 task pairs says more than any retrieval metric.
+   again). The auto-memory arm is the one that matters: beating "no memory"
+   is table stakes, beating the incumbent is the product claim. The
+   AGENTS.md result sets the bar *and* the framing: context files fail this
+   test; a memory system that passes it has a headline. Even n=20 task
+   pairs says more than any retrieval metric. The staleness tier (#2) is
+   where the auto-memory arm should visibly lose: after the fixture's
+   migration and rename, in-place-updated notes either still assert the old
+   world or have silently lost the evidence that it ever was the old world.
 2. **A staleness/implicit-conflict tier in shoply (STALE-style).** Today's
    fixture invalidates explicitly. Add cases where the code contradicts a
    session-derived fact *without anyone saying so* — the dependency quietly
@@ -487,9 +518,13 @@ profiles, context lakes); the one convergent neighbor is Letta's git-backed
 memory filesystem, which shares the ownership philosophy but not the
 structure. The defensible claim, sharpened by this year's literature: *the
 only system that is simultaneously owned, codebase-scoped, bi-temporal,
-epistemically typed, and deterministic on the write path* — with the
-AGENTS.md result as the argument for why the incumbent practice it replaces
-is not merely unstructured but measurably counterproductive.
+epistemically typed, and deterministic on the write path*. And the incumbent
+it actually competes with — auto-memory's in-place-mutated markdown — now
+has a literature's worth of arguments against it: ambient injection that
+measurably doesn't pay (AGENTS.md), an LLM write path the freshness work
+shows is a design error, and destroyed history that TierMem shows makes
+omissions unverifiable. The pitch writes itself: auto-memory with the
+epistemics done right.
 
 -----
 
