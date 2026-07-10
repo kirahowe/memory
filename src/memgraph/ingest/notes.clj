@@ -155,14 +155,20 @@
                     :hash (content-hash content)}))))
        vec))
 
-(defn- ingest-note! [s run harness-id {:keys [path content hash]} {:keys [predicates roster dry-run]}]
+(defn- ingest-note! [s run harness-id {:keys [path content hash]}
+                     {:keys [predicates roster evidence-dir dry-run]}]
   (let [prompt (extraction-prompt path content predicates roster)
         {:keys [facts demoted rejected]} (prepare-note-facts (session/parse-extraction (run prompt)))]
     (if dry-run
       {:file path :hash hash :status :dry-run :facts facts
        :demoted demoted :rejected rejected}
       (let [ref (episode-ref harness-id path hash)
-            result (core/ingest s {:source-type :agent-note :ref ref} facts)]
+            evidence (when evidence-dir
+                       ((requiring-resolve 'memgraph.evidence/write!)
+                        evidence-dir content))
+            result (core/ingest s {:source-type :agent-note :ref ref
+                                   :evidence evidence}
+                                facts)]
         (core/close-episode s {:episode (:episode result)
                                :summary (str "notes ingest " ref ": "
                                              (:total result) " facts ("
@@ -182,8 +188,10 @@
   opts: :harness (default claude-code) :dir (override the resolved notes dir)
         :project (project dir the harness keys its notes on; default cwd)
         :extractor (command string) :extractor-fn (injectable, tests)
+        :evidence-dir (keep each ingested note revision as a content-
+                       addressed artifact; skipped when absent)
         :dry-run (extract and report, write nothing)"
-  [s {:keys [harness dir project extractor extractor-fn dry-run]}]
+  [s {:keys [harness dir project extractor extractor-fn evidence-dir dry-run]}]
   (let [h (harness/resolve-harness harness)
         notes-dir (or dir
                       ((:notes-dir h) (System/getProperty "user.home")
@@ -198,6 +206,7 @@
                  :roster (session/entity-roster (store/-list-entities s {})
                                                 (store/-entity-usage s)
                                                 session/roster-limit)
+                 :evidence-dir evidence-dir
                  :dry-run dry-run}
             results (mapv #(ingest-note! s run (:id h) % ctx) changed)]
         {:status (if dry-run :dry-run :ok)

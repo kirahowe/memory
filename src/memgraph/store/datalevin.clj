@@ -60,6 +60,9 @@
    :episode/summary     {:db/valueType :db.type/string :db/fulltext true}
    :episode/opened-at   {:db/valueType :db.type/instant}
    :episode/closed-at   {:db/valueType :db.type/instant}
+   ;; content-address (sha-256) of the raw-evidence artifact this episode
+   ;; was extracted from; the bytes live outside the store (memgraph.evidence)
+   :episode/evidence    {:db/valueType :db.type/string}
 
    ;; ---- Predicate registry (self-describing vocabulary) ----
    :predicate/id          {:db/valueType :db.type/keyword :db/unique :db.unique/identity}
@@ -120,7 +123,8 @@
 (defn- episode->wire [m]
   {:id (:episode/id m) :source-type (:episode/source-type m)
    :ref (:episode/ref m) :summary (:episode/summary m)
-   :opened-at (:episode/opened-at m) :closed-at (:episode/closed-at m)})
+   :opened-at (:episode/opened-at m) :closed-at (:episode/closed-at m)
+   :evidence (:episode/evidence m)})
 
 (defn- pred->wire [m]
   (into {} (filter (comp some? val))
@@ -361,7 +365,8 @@
     (d/transact! conn [(strip-nils {:episode/id (:id ep)
                                     :episode/source-type (:source-type ep)
                                     :episode/ref (:ref ep)
-                                    :episode/opened-at (:opened-at ep)})])
+                                    :episode/opened-at (:opened-at ep)
+                                    :episode/evidence (:evidence ep)})])
     ep)
 
   (-close-episode [_ episode-id summary at]

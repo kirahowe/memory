@@ -14,7 +14,8 @@
              :last-reinforced-at Date|nil
              :confidence double :epistemic kw :scope str :source-type kw
              :episode str|nil :conflicts [fact-id] :invalidation-reason str|nil}
-  episode   {:id :source-type :ref :summary :opened-at :closed-at}
+  episode   {:id :source-type :ref :summary :opened-at :closed-at
+             :evidence sha256-str|nil}
   predicate {:id kw :label :category kw :object-kind kw :cardinality kw
              :inverse-of kw :status kw :replaced-by kw :definition
              :maps-to :default-epistemic kw}")

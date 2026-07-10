@@ -441,11 +441,12 @@
 ;; Episodes & ingestion
 ;; ---------------------------------------------------------------------------
 
-(defn open-episode [s {:keys [source-type ref]}]
-  (store/-open-episode s {:id (new-id "ep")
-                          :source-type (or (logic/->kw source-type) :session-log)
-                          :ref (str ref)
-                          :opened-at (now)}))
+(defn open-episode [s {:keys [source-type ref evidence]}]
+  (store/-open-episode s (cond-> {:id (new-id "ep")
+                                  :source-type (or (logic/->kw source-type) :session-log)
+                                  :ref (str ref)
+                                  :opened-at (now)}
+                           evidence (assoc :evidence (str evidence)))))
 
 (defn close-episode [s {:keys [episode summary]}]
   (when-not (store/-get-episode s episode)
@@ -459,11 +460,12 @@
   machinery. Returns per-status counts plus flagged/error details. Runs
   per-fact transactions: applying conflict policy fact-by-fact takes
   precedence over batch atomicity."
-  [s {:keys [episode source-type ref]} fact-maps]
+  [s {:keys [episode source-type ref evidence]} fact-maps]
   (let [ep (if episode
              (or (store/-get-episode s episode)
                  (logic/fail (str "Episode not found: " episode) {:type :episode-not-found}))
-             (open-episode s {:source-type source-type :ref (or ref "ingest")}))
+             (open-episode s {:source-type source-type :ref (or ref "ingest")
+                              :evidence evidence}))
         results (mapv (fn [m]
                         (try
                           (let [r (assert-fact s (-> m
@@ -538,7 +540,7 @@
           (swap! id-map assoc (:id e)
                  (update e' :aliases #(vec (distinct (into (vec %) (:aliases e))))))))
       (doseq [ep eps]
-        (store/-open-episode s (select-keys ep [:id :source-type :ref :opened-at]))
+        (store/-open-episode s (select-keys ep [:id :source-type :ref :opened-at :evidence]))
         (when (:closed-at ep)
           (store/-close-episode s (:id ep) (or (:summary ep) "") (:closed-at ep))))
       (doseq [f facts]

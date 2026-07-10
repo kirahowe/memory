@@ -204,7 +204,12 @@
                                            {:in prompt :out :string :err :string})
         ms (/ (- (System/nanoTime) t0) 1e6)]
     (if-not (zero? exit)
-      {:task (:id task) :error (str/trim (str err)) :ms ms}
+      {:task (:id task)
+       :error (let [e (str/trim (str err))]
+                (if (str/blank? e)
+                  (str "agent exit " exit ": " (subs (str out) 0 (min 300 (count (str out)))))
+                  e))
+       :exit exit :ms ms}
       (let [{:keys [text tokens cost]} (parse-agent-json out)
             answer (parse-answer-json text)
             verdict (when answer

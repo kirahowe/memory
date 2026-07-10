@@ -153,7 +153,7 @@ Goal: the two ingestion gaps the literature argues for hardest — keep raw
 evidence under the extractions, and start turning failures and decisions into
 procedural knowledge (the largest cluster of measured wins at the workshop).
 
-### 14. Raw-evidence tier under episodes
+### 14. Raw-evidence tier under episodes ✅ *(2026-07-10)*
 Keep raw transcripts as immutable content-addressed artifacts with provenance
 pointers from episodes, upgrading provenance from "which session" to "which
 utterance" and breaking the write-before-query barrier. Prerequisite for

@@ -144,8 +144,10 @@
   opts: :file (path; stdin when absent) | :transcript (string, wins over :file)
         :ref (episode ref) :extractor (command string)
         :extractor-fn (prompt -> response; injectable, used by tests)
+        :evidence-dir (keep the raw transcript as a content-addressed
+                       artifact the episode points to; skipped when absent)
         :dry-run (extract and report, write nothing)"
-  [s {:keys [file transcript ref extractor extractor-fn dry-run]}]
+  [s {:keys [file transcript ref extractor extractor-fn evidence-dir dry-run]}]
   (let [content (or transcript (if file (slurp file) (slurp *in*)))
         run (or extractor-fn
                 (partial llm/complete! (llm/command extractor)))
@@ -157,7 +159,12 @@
         {:keys [facts rejected]} (prepare-facts (parse-extraction (run prompt)))]
     (if dry-run
       {:status :dry-run :facts facts :rejected rejected}
-      (cond-> (core/ingest s {:source-type :session-log
-                              :ref (or ref (some-> file str) "session")}
-                           facts)
-        (seq rejected) (assoc :rejected rejected)))))
+      (let [evidence (when evidence-dir
+                       ((requiring-resolve 'memgraph.evidence/write!)
+                        evidence-dir content))]
+        (cond-> (core/ingest s {:source-type :session-log
+                                :ref (or ref (some-> file str) "session")
+                                :evidence evidence}
+                             facts)
+          evidence (assoc :evidence evidence)
+          (seq rejected) (assoc :rejected rejected))))))

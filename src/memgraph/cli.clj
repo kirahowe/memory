@@ -173,18 +173,44 @@
     (with-store opts
       (fn [s] (emit opts (ingest-code s (select-keys opts [:dir :scope])))))))
 
+(defn- evidence-dir [opts]
+  (or (:evidence-dir opts)
+      ((requiring-resolve 'memgraph.evidence/default-dir) (db-path opts))))
+
 (defn cmd-session-extract [{:keys [opts]}]
   (let [extract (requiring-resolve 'memgraph.ingest.session/extract!)]
     (with-store opts
       (fn [s]
-        (emit opts (extract s (select-keys opts [:file :ref :extractor :dry-run])))))))
+        (emit opts (extract s (assoc (select-keys opts [:file :ref :extractor :dry-run])
+                                     :evidence-dir (evidence-dir opts))))))))
 
 (defn cmd-ingest-notes [{:keys [opts]}]
   (let [ingest-notes (requiring-resolve 'memgraph.ingest.notes/ingest!)]
     (with-store opts
       (fn [s]
-        (emit opts (ingest-notes s (select-keys opts [:harness :dir :project
-                                                      :extractor :dry-run])))))))
+        (emit opts (ingest-notes s (assoc (select-keys opts [:harness :dir :project
+                                                             :extractor :dry-run])
+                                          :evidence-dir (evidence-dir opts))))))))
+
+(defn cmd-evidence [{:keys [opts]}]
+  (with-store opts
+    (fn [s]
+      (let [ep-id (:episode opts)
+            ep (when ep-id (store/-get-episode s ep-id))
+            hash (or (:hash opts) (:evidence ep))
+            fetch (requiring-resolve 'memgraph.evidence/fetch)]
+        (when (and ep-id (not ep))
+          (logic/fail (str "Episode not found: " ep-id) {:type :episode-not-found}))
+        (when-not hash
+          (logic/fail "No evidence recorded"
+                      {:type :no-evidence :episode ep-id
+                       :hint "episodes ingested before the evidence tier (or with it disabled) carry none"}))
+        (emit opts {:episode ep-id
+                    :ref (:ref ep)
+                    :evidence hash
+                    :content (or (fetch (evidence-dir opts) hash)
+                                 (logic/fail (str "Evidence artifact not on this machine: " hash)
+                                             {:type :evidence-missing :evidence hash}))})))))
 
 (defn cmd-compile-context [{:keys [opts]}]
   (let [compile-context (requiring-resolve 'memgraph.context/compile!)]
@@ -200,7 +226,8 @@
         (emit opts (run s (assoc (select-keys opts [:harness :project :dir :extractor
                                                     :consolidate-days :command
                                                     :resolve :min-confidence])
-                                 :db (db-path opts))))))))
+                                 :db (db-path opts)
+                                 :evidence-dir (evidence-dir opts))))))))
 
 (defn cmd-hooks-install [{:keys [opts]}]
   (let [install (requiring-resolve 'memgraph.hooks/install!)]
@@ -301,6 +328,12 @@ Commands:
   near-match resolutions self-heal by recording the queried name as an alias.
   predicates          List the vocabulary [--category C] [--status S] [--usage]
   predicate register  Coin an :x/* predicate: --id x/uses-pattern [--definition ...]
+  evidence            The raw bytes an episode was extracted from:
+                        --episode ID | --hash SHA256 [--evidence-dir DIR]
+                        Provenance past the summary: session-extract and
+                        ingest-notes keep their raw input as immutable
+                        content-addressed artifacts in <db>.evidence/ —
+                        what the extractor dropped is never unrecoverable.
   episode open        --source-type session-log|code|... [--ref REF]
   episode close       --episode ID --summary \"...\"
   episode list
@@ -395,6 +428,7 @@ Commands:
    {:cmds ["entity" "duplicates"] :fn cmd-entity-duplicates}
    {:cmds ["predicates"] :fn cmd-predicates :spec {:usage {:coerce :boolean}}}
    {:cmds ["predicate" "register"] :fn cmd-predicate-register}
+   {:cmds ["evidence"] :fn cmd-evidence}
    {:cmds ["episode" "open"] :fn cmd-episode-open}
    {:cmds ["episode" "close"] :fn cmd-episode-close}
    {:cmds ["episode" "list"] :fn cmd-episode-list}

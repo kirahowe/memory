@@ -216,6 +216,17 @@ CLI / skill front-end        src/memgraph/cli.clj        arg parsing, JSON in/ou
    for the epistemic field.
 5. **`assert`** — one fact, interactively or from a skill.
 
+## Raw evidence
+
+Extraction decides what to keep before knowing what a future query will
+hinge on (the write-before-query barrier), so `session-extract` and
+`ingest-notes` also keep their raw input: immutable, content-addressed
+artifacts in `<db>.evidence/`, pointed to by the episode they were extracted
+under. `bin/memgraph evidence --episode ID` returns the exact bytes —
+provenance past the summary, and nothing an extractor drops is
+unrecoverable. Notes-as-primary, transcripts-as-fallback: the artifacts are
+a local audit trail and don't ride the dump; the pointer does.
+
 ## Forgetting
 
 Disuse decay is a view, not a job. Facts store a base confidence and a

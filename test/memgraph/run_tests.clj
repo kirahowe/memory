@@ -5,6 +5,7 @@
             [memgraph.consolidate-test]
             [memgraph.context-test]
             [memgraph.core-test]
+            [memgraph.evidence-test]
             [memgraph.hooks-test]
             [memgraph.judge-test]
             [memgraph.load-test]
@@ -16,6 +17,7 @@
   (let [{:keys [fail error]} (t/run-tests 'memgraph.logic-test
                                           'memgraph.core-test
                                           'memgraph.load-test
+                                          'memgraph.evidence-test
                                           'memgraph.code-ingest-test
                                           'memgraph.session-test
                                           'memgraph.notes-test

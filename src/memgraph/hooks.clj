@@ -57,7 +57,8 @@
         :command :summarize-fn :judge-fn :resolve :min-confidence (consolidate)"
   [s {:keys [db consolidate-days] :as opts}]
   (let [ingest (attempt #(notes/ingest! s (select-keys opts [:harness :project :dir
-                                                             :extractor :extractor-fn])))
+                                                             :extractor :extractor-fn
+                                                             :evidence-dir])))
         compiled (attempt #(context/compile! s (select-keys opts [:harness :project
                                                                   :dir :budget])))
         days (or consolidate-days default-consolidate-days)
