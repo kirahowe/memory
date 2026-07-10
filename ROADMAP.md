@@ -65,7 +65,7 @@ Document the hook in the skill and add a `memgraph hooks install`
 convenience: every session ends with `ingest-notes && compile-context`;
 `consolidate` runs at lower frequency. *(consuming-auto-memory §4)*
 
-### 4. `load` command — complete the portability loop
+### 4. `load` command — complete the portability loop ✅ *(2026-07-10)*
 Restore a store from the `dump` JSONL. Already on TODO; promoted into this
 phase because multi-machine users of the ambient loop converge through the
 committed dump, not through per-machine note files — which requires dump to

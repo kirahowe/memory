@@ -216,6 +216,17 @@
               (emit opts {:status "dumped" :records (count records) :out f}))
           (doseq [line out] (println line)))))))
 
+(defn cmd-load [{:keys [opts]}]
+  (let [lines (if-let [f (:file opts)]
+                (str/split-lines (slurp f))
+                (line-seq (java.io.BufferedReader. *in*)))
+        records (into []
+                      (comp (remove str/blank?)
+                            (map #(json/parse-string % true)))
+                      lines)]
+    (with-store opts
+      (fn [s] (emit opts (core/load-dump s records))))))
+
 (defn cmd-stats [{:keys [opts]}]
   (with-store opts
     (fn [s] (emit opts (core/stats s)))))
@@ -340,6 +351,12 @@ Commands:
                         [--extractor CMD] [--command CMD] [--resolve]
                         [--min-confidence 0.8]
   dump                Export everything as JSONL [--out FILE]
+  load                Restore a store from a dump: --file F | stdin. The
+                        two-way half of portability — fact/episode ids,
+                        validity intervals, invalidation reasons, and
+                        conflict links round-trip exactly (a raw restore;
+                        the conflict machinery does NOT re-run). Refuses a
+                        store that already holds data.
   stats               Store counts
   consolidate         Offline consolidation pass: LLM-summarize and close open
                         episodes that contain facts (summaries become
@@ -393,6 +410,7 @@ Commands:
    {:cmds ["hooks" "install"] :fn cmd-hooks-install
     :spec {:consolidate-days {:coerce :long}}}
    {:cmds ["dump"] :fn cmd-dump}
+   {:cmds ["load"] :fn cmd-load}
    {:cmds ["stats"] :fn cmd-stats}
    {:cmds ["consolidate"] :fn cmd-consolidate
     :spec {:resolve {:coerce :boolean} :min-confidence {:coerce :double}

@@ -495,3 +495,67 @@
    (map #(assoc % :type "entity") (store/-list-entities s {}))
    (map #(assoc % :type "episode") (store/-list-episodes s))
    (map #(assoc % :type "fact") (store/-all-facts s))))
+
+(defn load-dump
+  "Restore a store from dump records: the other half of portability, so
+  multi-machine users converge through the committed dump. A raw restore,
+  deliberately NOT re-assertion — the dump already went through the conflict
+  machinery once, so fact/episode ids, validity intervals, invalidation
+  reasons, and conflict links round-trip exactly. Entity ids are re-minted
+  (they're internal); facts re-point through an identity map keyed on the
+  dumped id. Refuses a store that already holds data — load restores, it
+  does not merge."
+  [s records]
+  (let [st (store/-stats s)]
+    (when (or (pos? (long (:entities st 0)))
+              (pos? (long (get-in st [:facts :total] 0)))
+              (pos? (long (:episodes st 0))))
+      (logic/fail "Refusing to load into a non-empty store"
+                  {:type :store-not-empty
+                   :stats (select-keys st [:entities :facts :episodes])
+                   :hint "load restores a dump into a fresh store; point --db somewhere empty"}))
+    (let [parsed (mapv logic/rehydrate-dump-record records)
+          of-type (fn [t] (into [] (comp (filter #(= t (first %))) (map second)) parsed))
+          preds (of-type :predicate)
+          ents (of-type :entity)
+          eps (of-type :episode)
+          facts (of-type :fact)
+          unknown (of-type :unknown)
+          id-map (atom {})
+          remap (fn [emb]
+                  (when emb
+                    (or (@id-map (:id emb))
+                        ;; referenced but not in the entity records — restore
+                        ;; from the embedding itself
+                        (let [e (ensure-entity s (select-keys emb [:name :type :scope]))]
+                          (swap! id-map assoc (:id emb) e)
+                          e))))]
+      (doseq [p preds] (store/-register-predicate s p))
+      (doseq [e ents]
+        (let [e' (store/-ensure-entity s (select-keys e [:name :type :scope]))]
+          (when (seq (:aliases e))
+            (store/-update-entity s (:id e') {:add-aliases (vec (:aliases e))}))
+          (swap! id-map assoc (:id e)
+                 (update e' :aliases #(vec (distinct (into (vec %) (:aliases e))))))))
+      (doseq [ep eps]
+        (store/-open-episode s (select-keys ep [:id :source-type :ref :opened-at]))
+        (when (:closed-at ep)
+          (store/-close-episode s (:id ep) (or (:summary ep) "") (:closed-at ep))))
+      (doseq [f facts]
+        (store/-insert-fact s (-> f
+                                  (assoc :subject (remap (:subject f)))
+                                  (assoc :object-ref (remap (:object-ref f)))
+                                  (dissoc :invalidation-reason :conflicts)))
+        (when (and (:t-invalid f) (:invalidation-reason f))
+          (store/-invalidate s (:id f) (:t-invalid f) (:invalidation-reason f))))
+      (doseq [f facts
+              :when (seq (:conflicts f))]
+        (store/-link-conflicts s (:id f) (vec (:conflicts f))))
+      (cond-> {:status :loaded
+               :predicates (count preds)
+               :entities (count ents)
+               :episodes (count eps)
+               :facts (count facts)
+               :invalidated (count (filter :t-invalid facts))
+               :conflict-links (count (mapcat :conflicts facts))}
+        (seq unknown) (assoc :unknown-records (count unknown))))))

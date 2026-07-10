@@ -7,6 +7,7 @@
             [memgraph.core-test]
             [memgraph.hooks-test]
             [memgraph.judge-test]
+            [memgraph.load-test]
             [memgraph.logic-test]
             [memgraph.notes-test]
             [memgraph.session-test]))
@@ -14,6 +15,7 @@
 (defn -main [& _]
   (let [{:keys [fail error]} (t/run-tests 'memgraph.logic-test
                                           'memgraph.core-test
+                                          'memgraph.load-test
                                           'memgraph.code-ingest-test
                                           'memgraph.session-test
                                           'memgraph.notes-test

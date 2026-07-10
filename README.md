@@ -263,8 +263,12 @@ scans never reinforce — only intent writes do.
   the LLM is unavailable, so the pass always makes progress.
 - `judge` — LLM review of open conflicts on its own (see "How conflicts
   resolve").
-- `dump` — export everything as JSONL: the portability story. The live LMDB
-  directory is gitignored; the dump is the committable artifact.
+- `dump` / `load` — the portability story, two-way: `dump` exports everything
+  as JSONL (the live LMDB directory is gitignored; the dump is the committable
+  artifact), `load` restores a fresh store from it — fact/episode ids,
+  validity intervals, invalidation reasons, and conflict links round-trip
+  exactly (a raw restore; the conflict machinery does not re-run). Multi-
+  machine users of the ambient loop converge through the committed dump.
 
 ## Benchmark
 

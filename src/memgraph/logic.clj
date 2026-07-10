@@ -74,6 +74,43 @@
       tv (assoc :t-valid tv)
       ti (assoc :t-invalid ti))))
 
+(defn- strip-nils [m] (into {} (filter (comp some? val)) m))
+
+(defn- kw-fields [m ks]
+  (reduce (fn [a k] (if (some? (get a k)) (update a k ->kw) a)) m ks))
+
+(defn- date-fields [m ks]
+  (reduce (fn [a k] (if (some? (get a k)) (update a k parse-instant) a)) m ks))
+
+(defn rehydrate-dump-record
+  "Pure: one JSON-parsed dump record -> [type wire-map], keywords and dates
+  restored exactly as the store protocol documents them. The inverse of what
+  JSON serialization flattened; unknown record types come back as
+  [:unknown m] for the caller to report."
+  [m]
+  (let [t (->kw (:type m))
+        m (dissoc m :type)]
+    (case t
+      :predicate [t (-> m
+                        (kw-fields [:id :category :object-kind :cardinality
+                                    :inverse-of :status :replaced-by
+                                    :default-epistemic :exclusion-group
+                                    :value-exclusivity])
+                        strip-nils)]
+      :entity [t (-> m (kw-fields [:type]) strip-nils)]
+      :episode [t (-> m
+                      (kw-fields [:source-type])
+                      (date-fields [:opened-at :closed-at])
+                      strip-nils)]
+      :fact [t (-> m
+                   (kw-fields [:predicate :object-kind :epistemic :source-type])
+                   (date-fields [:t-valid :t-invalid :recorded-at :last-reinforced-at])
+                   (update :subject #(some-> % (kw-fields [:type]) strip-nils))
+                   (update :object-ref #(some-> % (kw-fields [:type]) strip-nils))
+                   (update :confidence #(some-> % double))
+                   strip-nils)]
+      [:unknown m])))
+
 ;; ---------------------------------------------------------------------------
 ;; Assertion decisions
 ;; ---------------------------------------------------------------------------
