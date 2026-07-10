@@ -4,3 +4,6 @@ priya: will do. unrelated: I spiked a kuzu-db adapter for the cache experiment o
 kira: hm. we need to talk about that one, there's history.
 priya: also, for shoply.cache I want a write-through cache strategy instead of the ad-hoc invalidation we have now. that part I feel strongly about.
 kira: that part I like. write it up.
+priya: last thing, naming. I found a queueing library in the repo literally called React. the actual React? here?
+kira: ha, no. internal thing, pure clojure, predates me. someone thought the name was funny because it "reacts" to queue events. shoply depends on it for the order pipeline. do not confuse it with the javascript one.
+priya: noted. filing that under names-that-lie.

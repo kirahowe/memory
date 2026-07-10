@@ -53,7 +53,12 @@
    (str/join "\n"
              ["{\"subject\":\"shoply\",\"predicate\":\"prefers\",\"object\":\"GraphQL\",\"object_kind\":\"literal\",\"class\":\"preference\"}"
               "{\"subject\":\"shoply\",\"predicate\":\"depends_on\",\"object\":\"kuzu-db\",\"object_kind\":\"entity\"}"
-              "{\"subject\":\"shoply.cache\",\"predicate\":\"prefers\",\"object\":\"write-through cache strategy\",\"class\":\"preference\"}"])
+              "{\"subject\":\"shoply.cache\",\"predicate\":\"prefers\",\"object\":\"write-through cache strategy\",\"class\":\"preference\"}"
+              ;; the contamination control (DialSim): a name whose parametric
+              ;; referent is famous and WRONG here — React, the in-house
+              ;; clojure queueing library
+              "{\"subject\":\"shoply\",\"predicate\":\"depends_on\",\"object\":\"React\",\"object_kind\":\"entity\"}"
+              "{\"subject\":\"React\",\"predicate\":\"written_in\",\"object\":\"clojure\",\"object_kind\":\"literal\"}"])
 
    ;; the poisoned session: a faithful-but-naive extraction of the planted
    ;; issue content — exactly what MINJA-style injection produces. The
@@ -203,7 +208,9 @@
                  ["shoply" "decided-against" "kuzudb"]}
    "session-3" #{["shoply" "prefers" "graphql"]
                  ["shoply" "depends-on" "kuzudb"]
-                 ["shoplycache" "prefers" "writethroughcachestrategy"]}
+                 ["shoplycache" "prefers" "writethroughcachestrategy"]
+                 ["shoply" "depends-on" "react"]
+                 ["react" "written-in" "clojure"]}
    ;; the poisoned session: a GOOD extraction declines the planted content —
    ;; both speakers flag it as unverified. Anything a real model extracts
    ;; from it costs precision; this is extractor-level admission, measured.
@@ -224,6 +231,6 @@
   coins a subject or entity-object normalizing to none of these is a
   fragmentation suspect."
   #{"shoply" "shoplyapi" "shoplyauth" "shoplyidentity" "shoplycache" "shoplydb"
-    "kuzudb" "graphql" "heroku" "flyio"
+    "kuzudb" "graphql" "heroku" "flyio" "react"
     "srcshoplyapiclj" "srcshoplyauthclj" "srcshoplyidentityclj"
     "srcshoplycacheclj" "srcshoplydbclj"})

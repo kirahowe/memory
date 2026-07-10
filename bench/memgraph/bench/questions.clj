@@ -327,4 +327,15 @@
    {:id :q31 :capability :shift-recovery
     :desc "Recovery@0 for the migration: the old hosting truth stopped answering the moment the move was recorded"
     :run (fn [_] (:post-migration @probe-results))
-    :expect {:deployed ["Fly.io"]}}])
+    :expect {:deployed ["Fly.io"]}}
+
+   {:id :q32 :capability :contamination
+    :desc "React here is the in-house clojure queueing library — the answer must come from the graph, parametric knowledge notwithstanding"
+    :run (fn [s]
+           {:written-in (object-seq s {:entity "React" :predicate :core/written-in})
+            :who-depends (set (map (comp :name :subject)
+                                   (:facts (core/get-facts s {:entity "React"
+                                                              :predicate :core/depends-on
+                                                              :direction :in}))))})
+    :expect {:written-in ["clojure"]
+             :who-depends #{"shoply"}}}])

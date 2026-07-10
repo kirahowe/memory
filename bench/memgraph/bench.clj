@@ -13,6 +13,7 @@
 
   MEMGRAPH_BENCH_STORE=memory runs mechanics pod-free."
   (:require [babashka.fs :as fs]
+            [babashka.process :as p]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [memgraph.bench.fixture :as fixture]
@@ -131,11 +132,18 @@
 
 (defn run-questions [s]
   (mapv (fn [{:keys [id capability desc run expect]}]
-          (let [actual (try (run s)
-                            (catch Exception e {:error (ex-message e)}))]
+          (let [t0 (System/nanoTime)
+                actual (try (run s)
+                            (catch Exception e {:error (ex-message e)}))
+                ms (/ (- (System/nanoTime) t0) 1e6)]
             {:id id :capability capability :desc desc
-             :expected expect :actual actual :pass? (= expect actual)}))
+             :expected expect :actual actual :pass? (= expect actual)
+             :ms ms}))
         questions/questions))
+
+(defn- median [xs]
+  (let [xs (vec (sort xs)) n (count xs)]
+    (when (pos? n) (nth xs (quot n 2)))))
 
 (defn scorecard [results]
   {:by-capability (into (sorted-map)
@@ -145,7 +153,14 @@
                              (group-by :capability results)))
    :passed (count (filter :pass? results))
    :total (count results)
-   :score (double (/ (count (filter :pass? results)) (count results)))})
+   :score (double (/ (count (filter :pass? results)) (count results)))
+   ;; metric hygiene (review §4.3.9): accuracy without latency is half a
+   ;; number. Per-question read latency, in-process (pod already warm).
+   :latency (let [slowest (apply max-key :ms results)]
+              {:median-ms (median (map :ms results))
+               :max-ms (:ms slowest)
+               :max-q (:id slowest)
+               :total-ms (reduce + (map :ms results))})})
 
 (defn- open-store []
   (if (= "memory" (System/getenv "MEMGRAPH_BENCH_STORE"))
@@ -168,17 +183,38 @@
         {:results results :scorecard (scorecard results)}))))
 
 (defn- print-mechanics [{:keys [results scorecard]}]
-  (doseq [{:keys [pass? capability id desc expected actual]} results]
-    (println (format "%-4s %-12s %-4s %s"
-                     (if pass? "ok" "FAIL") (name capability) (name id) desc))
+  (doseq [{:keys [pass? capability id desc expected actual ms]} results]
+    (println (format "%-4s %-14s %-4s %s (%.1fms)"
+                     (if pass? "ok" "FAIL") (name capability) (name id) desc ms))
     (when-not pass?
       (println "     expected:" (pr-str expected))
       (println "     actual:  " (pr-str actual))))
   (println)
   (doseq [[cap {:keys [passed total]}] (:by-capability scorecard)]
-    (println (format "  %-12s %d/%d" (name cap) passed total)))
+    (println (format "  %-14s %d/%d" (name cap) passed total)))
+  (let [{:keys [median-ms max-ms max-q total-ms]} (:latency scorecard)]
+    (println (format "%n  reads: median %.1fms, max %.1fms (%s), total %.1fms (in-process, pod warm)"
+                     median-ms max-ms (name max-q) total-ms)))
   (println (format "%nmechanics: %d/%d"
                    (:passed scorecard) (:total scorecard))))
+
+(defn- cli-cold-start-ms
+  "The per-invocation truth the in-process numbers hide: bb start + pod load
+  + store open + one read, via the real CLI against a throwaway store. The
+  trigger data for the MCP front-end (roadmap #27). Nil when the CLI or pod
+  isn't runnable here."
+  []
+  (let [bin (str (fs/path (or (some-> (System/getProperty "user.dir")) ".")
+                          "bin" "memgraph"))]
+    (when (fs/exists? bin)
+      (try
+        (let [db (str (fs/path (fs/temp-dir) (str "memgraph-cold-" (random-uuid))))
+              t0 (System/nanoTime)
+              {:keys [exit]} @(p/process [bin "stats" "--db" db]
+                                         {:out :string :err :string})]
+          (when (zero? exit)
+            (/ (- (System/nanoTime) t0) 1e6)))
+        (catch Exception _ nil)))))
 
 ;; ---------------------------------------------------------------------------
 ;; LLM quality layer
@@ -282,4 +318,6 @@
     (print-llm (run-llm {:judge-runs (or (some-> (second args) parse-long) 3)}))
     (let [{:keys [scorecard] :as report} (run-mechanics)]
       (print-mechanics report)
+      (when-let [ms (cli-cold-start-ms)]
+        (println (format "  CLI cold start (bb + pod + open + one read): %.0fms" ms)))
       (System/exit (if (= 1.0 (:score scorecard)) 0 1)))))

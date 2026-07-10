@@ -125,7 +125,7 @@ how many reads/writes until old names resolve and stale facts fade.
 Run each labeled conflict pair k times; report flip rate alongside accuracy
 and let stability inform the 0.8 resolution gate. Cheap. *(review §3.9, §4.3.8)*
 
-### 11. Metric hygiene
+### 11. Metric hygiene ✅ *(2026-07-10)*
 Report latency per read alongside accuracy (pod cold-start is the honest weak
 spot — this is also the trigger data for issue 27), and add a contamination
 control: fixture entities with swapped names so correct answers must come
