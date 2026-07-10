@@ -203,7 +203,7 @@ Fuse FTS + entity/graph + vector scoring (Datalevin already has SIMD vector
 search — TODO's deferred item, now with evidence behind it). *(review §3.2;
 TODO)*
 
-### 19. Write-time enrichment
+### 19. Write-time enrichment ✅ *(2026-07-10)*
 Consolidation emits search phrases / alt-labels so FTS behaves closer to
 semantic search without embeddings. SIRA-style, training-free. *(review §3.2)*
 

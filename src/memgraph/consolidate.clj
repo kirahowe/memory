@@ -14,10 +14,12 @@
   Closing an episode with a summary is what turns bulky episodic memory into
   something retrievable: summaries are full-text indexed, so \"why did we do
   X\" becomes a search."
-  (:require [clojure.string :as str]
+  (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [memgraph.core :as core]
             [memgraph.judge :as judge]
             [memgraph.llm :as llm]
+            [memgraph.logic :as logic]
             [memgraph.store :as store]))
 
 (def default-min-usage 3)
@@ -88,6 +90,57 @@
                         (str n " " (subs (str p) 1))))))
 
 ;; ---------------------------------------------------------------------------
+;; Pure: retrieval enrichment (SIRA-style, review §3.2)
+;; ---------------------------------------------------------------------------
+
+(def max-enrichment-entities 20)
+(def max-aliases-per-entity 3)
+
+(defn enrichment-candidates
+  "Entities worth enriching this pass: they carry facts (usage) but no
+  aliases yet — one shot per entity, bounded per pass, most-used first.
+  Aliases are the training-free path to semantic-ish retrieval: they are
+  full-text indexed and the hybrid entity route resolves through them."
+  [entities usage]
+  (->> entities
+       (filter #(empty? (:aliases %)))
+       (keep (fn [e]
+               (let [n (get usage (:id e) 0)]
+                 (when (pos? n) (assoc e :usage n)))))
+       (sort-by (fn [e] [(- (:usage e)) (:name e)]))
+       (take max-enrichment-entities)
+       vec))
+
+(defn enrichment-prompt [entity facts]
+  (str
+   "An entity in a project knowledge graph needs searchable alternative\n"
+   "names. Emit a JSON array of up to " max-aliases-per-entity " short\n"
+   "alternative names or synonyms a developer might type when searching for\n"
+   "it — nothing else, no prose. Only genuinely synonymous names (nicknames,\n"
+   "expansions, the concept it implements); never invent variants that could\n"
+   "mean something else, and never emit the name itself. [] when none fit.\n\n"
+   "Entity: " (:name entity)
+   (when-let [t (:type entity)] (str " [" (name t) "]")) "\n"
+   "What the graph knows about it:\n"
+   (str/join "\n" (map fact-line facts))))
+
+(defn parse-aliases
+  "Tolerant parse of the enrichment reply: a JSON array of strings, fences
+  and prose stripped, blanks and the entity's own names dropped, capped."
+  [response entity]
+  (let [own (set (map str/lower-case (cons (:name entity) (:aliases entity))))]
+    (->> (try (json/parse-string
+               (or (re-find #"(?s)\[.*?\]" (str response)) "[]"))
+              (catch Exception _ []))
+         (filter string?)
+         (map str/trim)
+         (remove str/blank?)
+         (remove #(own (str/lower-case %)))
+         distinct
+         (take max-aliases-per-entity)
+         vec)))
+
+;; ---------------------------------------------------------------------------
 ;; Pure: promotion candidates
 ;; ---------------------------------------------------------------------------
 
@@ -122,13 +175,40 @@
                  to-close)
    :skipped-empty skipped-empty})
 
+(defn- enrich-entities!
+  "The SIRA-style stage: give alias-less, fact-bearing entities searchable
+  alternative names. Every alias goes through core/alias-entity, so a name
+  clash with another entity is refused there and skipped here — enrichment
+  must never create ambiguity. Failures (no LLM) skip silently: enrichment
+  is a bonus, never a blocker."
+  [s run]
+  (let [now (core/now)
+        candidates (enrichment-candidates (store/-list-entities s {})
+                                          (store/-entity-usage s))
+        enriched
+        (vec (for [e candidates
+                   :let [facts (filterv #(logic/fact-valid-at? % now)
+                                        (store/-get-facts s (:id e) {:direction :both}))
+                         aliases (when (seq facts)
+                                   (try (parse-aliases (run (enrichment-prompt e facts)) e)
+                                        (catch Exception _ nil)))
+                         added (vec (for [a aliases
+                                          :when (try (core/alias-entity
+                                                      s {:name (:name e) :alias a})
+                                                     (catch Exception _ nil))]
+                                      a))]
+                   :when (seq added)]
+               {:entity (:name e) :aliases added}))]
+    {:considered (count candidates)
+     :enriched enriched}))
+
 (defn consolidate!
   "Run the full consolidation pass.
   opts: :command (LLM command; default $MEMGRAPH_LLM_CMD or claude -p)
-        :summarize-fn :judge-fn (prompt -> response; injectable, used by tests)
+        :summarize-fn :judge-fn :enrich-fn (prompt -> response; injectable)
         :resolve :min-confidence (forwarded to the conflict judge)
         :min-usage (promotion-candidate threshold, default 3)"
-  [s {:keys [command summarize-fn judge-fn resolve min-confidence min-usage]}]
+  [s {:keys [command summarize-fn judge-fn enrich-fn resolve min-confidence min-usage]}]
   (let [all-episodes (store/-list-episodes s)
         open-ids (mapv :id (remove :closed-at all-episodes))
         ep-facts (if (seq open-ids)
@@ -143,11 +223,14 @@
         conflicts (try (judge/judge-conflicts! s judge-opts)
                        (catch Exception e {:error (ex-message e)}))
         sweep (try (judge/sweep-conflicts! s judge-opts)
-                   (catch Exception e {:error (ex-message e)}))]
+                   (catch Exception e {:error (ex-message e)}))
+        enrichment (try (enrich-entities! s (or enrich-fn run))
+                        (catch Exception e {:error (ex-message e)}))]
     {:status :consolidated
      :episodes episodes
      :conflicts conflicts
      :sweep sweep
+     :enrichment enrichment
      :promotion-candidates (promotion-candidates
                             (store/-list-predicates s {:status :testing})
                             (store/-predicate-usage s)

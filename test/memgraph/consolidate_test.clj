@@ -101,3 +101,44 @@
       (is (str/starts-with? summary "session-log episode (sess-2): 1 facts")
           "the pass still closes the episode with a mechanical digest"))
     (is (some? (:summary (store/-get-episode s (:episode r)))))))
+
+(deftest enrichment-gives-entities-searchable-aliases
+  (testing "pure: candidates are alias-less, fact-bearing, bounded"
+    (let [cands (consolidate/enrichment-candidates
+                 [{:id "e1" :name "A" :aliases []}
+                  {:id "e2" :name "B" :aliases ["already"]}
+                  {:id "e3" :name "C" :aliases []}]
+                 {"e1" 5 "e2" 9 "e3" 0})]
+      (is (= ["A"] (mapv :name cands))
+          "aliased and fact-less entities are skipped")))
+  (testing "pure: alias parsing is tolerant and self-excluding"
+    (is (= ["identity service" "sso"]
+           (consolidate/parse-aliases
+            "Here you go:\n```json\n[\"identity service\", \"sso\", \"AuthService\", \"\"]\n```"
+            {:name "AuthService" :aliases []}))))
+  (testing "the stage adds aliases through the clash guard"
+    (let [s (mem/create)
+          _ (core/seed! s)
+          _ (core/assert-fact s {:subject "AuthService" :predicate :core/prefers
+                                 :object "argon2" :object-kind :literal})
+          _ (core/assert-fact s {:subject "sso" :predicate :core/depends-on
+                                 :object "AuthService"})
+          r (consolidate/consolidate!
+             s {:summarize-fn (fn [_] "summary")
+                :judge-fn (fn [_] "")
+                :enrich-fn (fn [_] "[\"identity service\", \"sso\"]")})]
+      (is (= [{:entity "AuthService" :aliases ["identity service"]}
+              (first (filter #(not= "AuthService" (:entity %))
+                             (:enriched (:enrichment r))))]
+             (vec (take 2 (sort-by :entity (:enriched (:enrichment r))))))
+          "the sso alias clashed with the sso entity and was skipped")
+      (is (contains? (set (:aliases (:entity (core/get-facts s {:entity "identity service"}))))
+                     "identity service")
+          "the alias resolves like any other name")
+      (testing "second pass skips entities that now carry aliases"
+        (let [r2 (consolidate/consolidate!
+                  s {:summarize-fn (fn [_] "summary")
+                     :judge-fn (fn [_] "")
+                     :enrich-fn (fn [_] "[\"more\"]")})]
+          (is (not-any? #(= "AuthService" (:entity %))
+                        (:enriched (:enrichment r2)))))))))
