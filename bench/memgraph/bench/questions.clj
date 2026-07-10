@@ -17,6 +17,38 @@
 
 (defn- object-seq [s q] (mapv obj (:facts (core/get-facts s q))))
 
+;; ---------------------------------------------------------------------------
+;; Probes: point-in-time measurements taken DURING the timeline (ShiftBench's
+;; Recovery@T needs the state right after a shift, before later steps touch
+;; it). The harness runs :probe steps through run-probe!; questions read the
+;; recorded results.
+;; ---------------------------------------------------------------------------
+
+(def probe-results (atom {}))
+
+(def probes
+  {;; immediately after the March shift pass (code reconciliation + merge),
+   ;; with zero further reads or writes
+   :post-shift
+   (fn [s]
+     {:old-name-resolves (get-in (core/resolve-entity s {:name "shoply.auth"})
+                                 [:entity :name])
+      :facts-carried (contains? (objects s {:entity "shoply.auth"
+                                            :predicate :core/prefers})
+                                "argon2 for password hashing")
+      :stale-dep-closed (not (contains? (objects s {:entity "shoply.api"
+                                                    :predicate :core/depends-on})
+                                        "shoply.db"))
+      :new-deps (objects s {:entity "shoply.api" :predicate :core/depends-on})})
+
+   ;; immediately after the hosting migration is recorded
+   :post-migration
+   (fn [s] {:deployed (object-seq s {:entity "shoply"
+                                     :predicate :core/deployed-via})})})
+
+(defn run-probe! [s id]
+  (swap! probe-results assoc id ((get probes id) s)))
+
 (def questions
   [{:id :q1 :capability :retrieval
     :desc "current dependencies of shoply.api"
@@ -277,4 +309,22 @@
                                                           :predicate :core/deployed-via})))}))
     :expect {:all-from-one-episode true
              :planted-facts 3
-             :heroku-coexists-LEAK true}}])
+             :heroku-coexists-LEAK true}}
+
+   {:id :q29 :capability :shift-recovery
+    :desc "Recovery@0 for the rename: the old name answered immediately after the shift pass, facts carried"
+    :run (fn [_] (select-keys (:post-shift @probe-results)
+                              [:old-name-resolves :facts-carried]))
+    :expect {:old-name-resolves "shoply.identity" :facts-carried true}}
+
+   {:id :q30 :capability :shift-recovery
+    :desc "Recovery@0 for the code: reconciliation closed the dropped dependency in the shift pass itself"
+    :run (fn [_] (select-keys (:post-shift @probe-results)
+                              [:stale-dep-closed :new-deps]))
+    :expect {:stale-dep-closed true
+             :new-deps #{"shoply.identity" "shoply.cache"}}}
+
+   {:id :q31 :capability :shift-recovery
+    :desc "Recovery@0 for the migration: the old hosting truth stopped answering the moment the move was recorded"
+    :run (fn [_] (:post-migration @probe-results))
+    :expect {:deployed ["Fly.io"]}}])

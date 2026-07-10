@@ -116,7 +116,7 @@ would catch it); (2) a fresh 0.7 poison ranks into `compile-context`'s
 current-facts section until it decays — the injection surface is downstream
 of admission.*
 
-### 9. Shift-recovery case
+### 9. Shift-recovery case ✅ *(2026-07-10)*
 The fixture already contains a rename and a migration; measure Recovery@T —
 how many reads/writes until old names resolve and stale facts fade.
 *(review §4.3.5, ShiftBench)*

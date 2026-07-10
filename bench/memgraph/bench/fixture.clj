@@ -149,11 +149,15 @@
 
    {:op :code :files march-code :label "march code (auth renamed, deps changed)"}
    {:op :merge :from "shoply.auth" :into "shoply.identity"}
+   {:op :probe :id :post-shift
+    :label "Recovery@0: measured before anything else touches the store"}
    {:op :assert :args {:subject "shoply" :predicate :core/has-version
                        :object "0.2.0" :valid-from "2026-03-10"}}
    {:op :session :ref "session-2" :resource "fixtures/session-2.txt"}
    {:op :invalidate-object :entity "shoply" :predicate :core/deployed-via
     :object-lit "Heroku" :at "2026-03-10" :reason "migrated to Fly.io"}
+   {:op :probe :id :post-migration
+    :label "Recovery@0 for the hosting move"}
 
    ;; April: storage-agnosticism decision — the cache layer must never touch
    ;; the db namespace directly. June's code quietly violates it.

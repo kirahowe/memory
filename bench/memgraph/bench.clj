@@ -105,6 +105,9 @@
                                        :recorded-at t
                                        :last-reinforced-at t))))
 
+    :probe
+    (questions/run-probe! s (:id step))
+
     :consolidate
     (consolidate/consolidate! s {:summarize-fn fixture/recorded-summarizer
                                  :judge-fn fixture/recorded-judge})))
@@ -115,6 +118,7 @@
   (let [root (fs/create-temp-dir {:prefix "memgraph-bench"})
         dirs {:code-dir (fs/path root "code")
               :notes-dir (fs/path root "notes")}]
+    (reset! questions/probe-results {})
     (try
       (doseq [step fixture/steps]
         (run-step! s dirs step))
