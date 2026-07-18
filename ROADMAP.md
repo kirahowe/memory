@@ -251,10 +251,15 @@ same entity currently hit last-write-wins at the LMDB level. Even a
 lease/lock or append-log-and-reconcile design closes the obvious hole.
 *(review §3.7)*
 
-### 26. Scale tier for the benchmark
+### 26. Scale tier for the benchmark ✅ *(2026-07-10)*
 Synthetic history at 10×/100× fixture size (AMA-Bench-style generation,
 rule-based QA); report read latency, sweep cost, accuracy, and maintenance
 cost per consolidate pass — the metric the field omits. *(review §3.8, §4.3.6)*
+*Findings at 100× (2.3k facts, Datalevin): rule-QA 20/20, point reads ~10ms,
+search ~22ms, consolidate ~1.1s mechanical + 51 prompts / ~208KB per real
+pass. The visible cost is write throughput (~21ms/write through the pod's
+read-decide-write cycle) — batch ingestion at 10k+ facts wants a batched
+assert path before anything else does.*
 
 ### 27. MCP front-end
 Thin second front-end over `memgraph.core`. Stays trigger-gated as designed

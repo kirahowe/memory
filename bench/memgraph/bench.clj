@@ -326,6 +326,17 @@
       (with-timeline-store
         (fn [s] (print' (run s {:k (or (some-> (second args) parse-long) 3)})))))
 
+    ;; the scale tier (informational, deterministic): bb bench scale [10|100]
+    (= "scale" (first args))
+    (let [factor (or (some-> (second args) parse-long) 10)
+          run (requiring-resolve 'memgraph.bench.scale/run-scale)
+          print' (requiring-resolve 'memgraph.bench.scale/print-scale)
+          s (open-store)]
+      (try
+        (core/seed! s)
+        (print' (run s factor))
+        (finally (store/-close s))))
+
     ;; the headline four-arm A/B (informational, spends real agent calls):
     ;;   bb bench ab                  all four arms, all tasks
     ;;   bb bench ab none memgraph    a pilot on selected arms
