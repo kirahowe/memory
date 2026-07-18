@@ -356,13 +356,23 @@ CLI uses, so an MCP front-end won't invalidate it.
 ## Tests
 
 ```bash
-bb test    # 25 tests / 151 assertions
+bb test    # 119 tests / 757 assertions
 ```
 
 The core-semantics suite runs against BOTH store implementations (the proof of
 the storage abstraction); the logic suite tests pure decision functions with no
 store at all; the session suite injects a fake extractor and never shells out.
 `MEMGRAPH_TEST_SKIP_DATALEVIN=1 bb test` runs pod-free.
+
+## The book
+
+`book/` holds a full-length book about the project: background and mental
+model as prose, and every code-bearing chapter as a real Clojure namespace
+that Clay evaluates against this source tree at build time, rendered into a
+Quarto book. Build it with `bb book` (needs a JVM and the
+[quarto](https://quarto.org) CLI; the tool itself needs neither), or
+`bb book:preview` to serve it locally. Output lands in
+`book/rendered/_book/`.
 
 ## Documents
 

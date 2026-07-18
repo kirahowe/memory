@@ -151,6 +151,11 @@ memgraph's two misses: hosting = the poisoning leak reaching an end task
 measured), react-lang = honest abstention. Open: grow to n≈20 task pairs and
 multiple runs for CIs; add a queryable-CLI arm variant (pull-side judgment,
 not just the compiled view).*
+*Rerun after issue 23 landed: memgraph 0.86. The hosting miss became an
+honest abstention ({"provider": "unknown"}) — the revenant flag plus the
+disputed-fact exclusion from compile-context mean the planted value no
+longer reaches the agent as current truth. The poisoning attack now buys
+uncertainty, not a wrong confident answer.*
 
 ### 13. Retrieval-vs-structure ablation ✅ *(2026-07-10)*
 memgraph full vs raw chunks + BM25/embeddings vs memgraph with degraded

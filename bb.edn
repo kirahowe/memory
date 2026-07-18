@@ -6,4 +6,8 @@
   bench    {:doc  "Run the memory benchmark (bb bench = deterministic mechanics; bb bench llm = LLM quality layer)"
             :task (apply (requiring-resolve 'memgraph.bench/-main) *command-line-args*)}
   memgraph {:doc  "Run the memgraph CLI (bb run memgraph -- <args>)"
-            :task (apply (requiring-resolve 'memgraph.cli/-main) *command-line-args*)}}}
+            :task (apply (requiring-resolve 'memgraph.cli/-main) *command-line-args*)}
+  book     {:doc  "Build the book: Clay evaluates book/chapters/ against src/, Quarto renders to book/rendered/_book. Needs a JVM and the quarto CLI."
+            :task (clojure "-X:book")}
+  book:preview {:doc  "Build the book, then serve it with quarto preview"
+                :task (clojure "-X:book-preview")}}}

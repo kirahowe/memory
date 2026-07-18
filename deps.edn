@@ -1,0 +1,16 @@
+{;; JVM Clojure classpath for the book build only. The tool itself runs on
+ ;; babashka (see bb.edn); this file exists so Clay can evaluate the book's
+ ;; example namespaces against the real memgraph source.
+ :paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.4"}
+        babashka/fs         {:mvn/version "0.5.34"}
+        babashka/process    {:mvn/version "0.6.25"}
+        org.babashka/cli    {:mvn/version "0.12.76"}
+        cheshire/cheshire   {:mvn/version "6.2.0"}}
+ :aliases
+ {:book {:extra-deps  {org.scicloj/clay {:mvn/version "2.0.16"}}
+         :extra-paths ["book"]
+         :exec-fn     render/build!}
+  :book-preview {:extra-deps  {org.scicloj/clay {:mvn/version "2.0.16"}}
+                 :extra-paths ["book"]
+                 :exec-fn     render/preview!}}}

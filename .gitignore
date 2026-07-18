@@ -2,3 +2,8 @@
 .memgraph/
 *.dump.jsonl
 bench/results/
+
+# Book build artifacts (sources live in book/chapters/; `bb book` regenerates these)
+book/rendered/
+.clay/
+.cpcache/
