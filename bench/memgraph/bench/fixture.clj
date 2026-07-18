@@ -224,7 +224,8 @@
   {"graphql" :contradicts
    "kuzudb"  :contradicts
    "shoplydb" :contradicts
-   "restwithednbodies" :contradicts})
+   "restwithednbodies" :contradicts
+   "heroku" :contradicts})
 
 (def known-entity-names
   "Canonical entities the finished graph contains. LLM extraction that

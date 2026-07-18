@@ -102,16 +102,16 @@
     :answer ["argon2"]
     :distractors []}   ;; plain recall: raw chunks should get this one
 
-   ;; NOTE: this one MISSES on the full arm today, and that is the honest
-   ;; number — the poisoning leak (bench q28) leaves a second valid
-   ;; deployed-via in the graph, and nothing short of issue 23's trust
-   ;; model disambiguates it. The raw arm misses it too (Heroku lives in
-   ;; the transcripts forever). Flip this row when issue 23 lands.
+   ;; The full arm answers this ONLY because of the trust model (issue 23):
+   ;; the poisoned Heroku resurrection is revenant-flagged, so current truth
+   ;; is "valid AND undisputed". The raw arm can never disambiguate — Heroku
+   ;; lives in the transcripts forever.
    {:id :current-hosting :capability :current-truth
     :query "where does shoply deploy today hosting provider"
     :graph (fn [s] (= ["Fly.io"]
                       (mapv :object-lit
-                            (filter #(nil? (:t-invalid %))
+                            (filter #(and (nil? (:t-invalid %))
+                                          (empty? (:conflicts %)))
                                     (:facts (core/get-facts s {:entity "shoply"
                                                                :predicate :core/deployed-via
                                                                :as-of (core/now)}))))))
@@ -138,7 +138,7 @@
 
    {:id :open-conflicts :capability :conflicts
     :query "what standing decisions are currently being contradicted"
-    :graph (fn [s] (= 5 (:open (core/conflicts s))))
+    :graph (fn [s] (= 6 (:open (core/conflicts s))))
     :answer ["kuzudb" "graphql"]
     :distractors []
     :requires-join true}   ;; the pair-ness never co-occurs in one chunk
@@ -236,5 +236,6 @@
   (println (str "\nreading: plain recall and single-chunk history are where raw "
                 "retrieval keeps up;\ncurrent-truth disambiguation, time-travel, "
                 "conflicts, forgetting, and abstention\nare where the structure "
-                "pays. current-hosting misses on every arm: that is the\nopen "
-                "poisoning leak (bench q28) that issue 23's trust model closes.")))
+                "pays. current-hosting is answerable only because the trust\n"
+                "model revenant-flags the poisoned resurrection (issue 23) — no "
+                "retrieval-only arm\ncan disambiguate it.")))

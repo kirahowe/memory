@@ -115,6 +115,9 @@ novelty/outlier check on writes that contradict recently-invalidated facts
 would catch it); (2) a fresh 0.7 poison ranks into `compile-context`'s
 current-facts section until it decays — the injection surface is downstream
 of admission.*
+*Update: both leaks closed by issue 23 — the revenant check flags the
+resurrected value against its live rival, and disputed facts never enter the
+compiled current-truth section.*
 
 ### 9. Shift-recovery case ✅ *(2026-07-10)*
 The fixture already contains a rename and a migration; measure Recovery@T —
@@ -231,7 +234,7 @@ epistemic-class prior, source typing) into an explicit rule-based
 admit/reject score with at most one optional LLM utility signal. Requires the
 raw tier (gate the graph, keep the log). *(review §3.3, A-MAC/SAGE)*
 
-### 23. Source trust model and poisoning defenses
+### 23. Source trust model and poisoning defenses ✅ *(2026-07-10)*
 Trust levels on sources and a novelty/outlier check on writes, driven by what
 the red-team case (issue 8) shows leaks through the existing incidental
 mitigations. *(review §3.6)*

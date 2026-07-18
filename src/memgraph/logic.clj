@@ -178,6 +178,22 @@
     #(= (get-in % [:object-ref :id]) (get-in fact [:object-ref :id]))
     #(= (:object-lit %) (:object-lit fact))))
 
+(def source-trust
+  "Trust rank per source-type (review §3.6): human decisions and mechanical
+  derivation at the top, extraction in the middle, agent inference at the
+  bottom. Drives two write-time defenses — a weaker source never silently
+  supersedes a stronger one, and non-trusted sources resurrecting a dead
+  value get flagged, not believed."
+  {:decision-record 3
+   :user-assertion 3
+   :code 3
+   :session-log 2
+   :failure-report 2
+   :agent-note 1
+   :inferred 1})
+
+(defn trust-rank [source-type] (get source-trust source-type 2))
+
 (defn conflict-policy
   "Default policy from epistemic class: a commitment on either side of the
   conflict flags (never silently overwrite a human decision); observations
@@ -204,20 +220,32 @@
 
   A re-assertion of an existing fact is reinforcement, not a dead end: the
   world (or the user) just confirmed it, so its disuse clock resets and its
-  confidence may rise toward the source ceiling."
-  [{:keys [fact pred existing exclusion on-conflict]}]
+  confidence may rise toward the source ceiling.
+
+  Two trust defenses (review §3.6) sit in the decision, both overridable
+  with an explicit :on-conflict:
+  - outranked supersede: a lower-trust source never silently closes a
+    higher-trust fact's interval — it flags instead (:reason :outranked).
+  - revenants: a non-trusted source re-asserting a value this (subject,
+    predicate) already lived through and invalidated (:revenants, gathered
+    by the shell) is either stale or adversarial — it flags against the
+    currently-live rivals (:reason :revenant) instead of quietly coexisting."
+  [{:keys [fact pred existing exclusion revenants rivals on-conflict]}]
   (let [same? (same-object-pred fact)
         duplicate (first (filter same? existing))
         conflicting (vec (concat (when (= :one (:cardinality pred))
                                    (remove same? existing))
-                                 exclusion))]
+                                 exclusion))
+        new-trust (trust-rank (:source-type fact))]
     (cond
       duplicate
       {:action :reinforce :existing duplicate :fact fact}
 
       (seq conflicting)
       (let [effective-at (:t-valid fact)
-            inverted? (some #(> (ms (:t-valid %)) (ms effective-at)) conflicting)]
+            inverted? (some #(> (ms (:t-valid %)) (ms effective-at)) conflicting)
+            outranked? (some #(> (trust-rank (:source-type %)) new-trust)
+                             conflicting)]
         (case (conflict-policy (:epistemic fact) conflicting on-conflict)
           ;; clean succession: the new truth begins exactly where the old one
           ;; ends, so predecessors close at the successor's valid-from. Equal
@@ -225,15 +253,29 @@
           ;; replaced, never observably valid). A successor starting strictly
           ;; before a predecessor is a backdated overlap — a valid-time
           ;; contradiction, never silently inverted; it takes the flag path.
-          :supersede (if inverted?
+          :supersede (cond
+                       inverted?
                        {:action :flag :fact fact :reason :backdated-overlap
                         :link (mapv :id conflicting) :candidates conflicting}
+
+                       outranked?
+                       {:action :flag :fact fact :reason :outranked
+                        :link (mapv :id conflicting) :candidates conflicting}
+
+                       :else
                        {:action :supersede :fact fact
                         :invalidate (mapv :id conflicting)
                         :effective-at effective-at})
           :flag {:action :flag :fact fact
                  :link (mapv :id conflicting) :candidates conflicting}
           :ignore {:action :insert :fact fact}))
+
+      (and (< new-trust 3)
+           (seq (filter (same-object-pred fact) revenants))
+           (seq rivals)
+           (not (#{:ignore :supersede} on-conflict)))
+      {:action :flag :fact fact :reason :revenant
+       :link (mapv :id rivals) :candidates (vec rivals)}
 
       :else
       {:action :insert :fact fact})))

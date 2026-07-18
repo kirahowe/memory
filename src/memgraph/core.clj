@@ -346,19 +346,28 @@
                            (map :id)
                            (remove #{pred-id})
                            vec))
-        fetched (->> (store/-get-facts s (:id subj)
-                                       {:direction :out
-                                        :predicate (if (seq group-mates)
-                                                     (into [pred-id] group-mates)
-                                                     pred-id)})
-                     (filterv #(logic/fact-valid-at? % t-now)))]
+        raw (store/-get-facts s (:id subj)
+                              {:direction :out
+                               :predicate (if (seq group-mates)
+                                            (into [pred-id] group-mates)
+                                            pred-id)})
+        fetched (filterv #(logic/fact-valid-at? % t-now) raw)
+        same-pred-valid (filterv #(= pred-id (:predicate %)) fetched)]
     (execute-assert! s
                      (logic/decide-assert {:fact fact
                                            :pred pred
-                                           :existing (filterv #(= pred-id (:predicate %)) fetched)
+                                           :existing same-pred-valid
                                            :exclusion (filterv #(and (not= pred-id (:predicate %))
                                                                      (logic/same-object-loosely? fact %))
                                                                fetched)
+                                           ;; the trust defenses' inputs: this
+                                           ;; (subject, predicate)'s dead facts,
+                                           ;; and the live different-valued ones
+                                           :revenants (filterv #(and (= pred-id (:predicate %))
+                                                                     (some? (:t-invalid %))
+                                                                     (not (logic/fact-valid-at? % t-now)))
+                                                               raw)
+                                           :rivals same-pred-valid
                                            :on-conflict (logic/->kw on-conflict)}))))
 
 ;; ---------------------------------------------------------------------------

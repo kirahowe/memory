@@ -77,6 +77,10 @@
         top (->> valid
                  (remove #(= :commitment (:epistemic %)))
                  (remove #(= :code (:source-type %)))
+                 ;; disputed facts belong in the conflicts section, never in
+                 ;; the current-truth list — a flagged poison must not read
+                 ;; as settled fact in the injected view (review §3.6)
+                 (remove #(seq (:conflicts %)))
                  (map #(assoc % :effective-confidence (logic/effective-confidence % now)))
                  (sort-by (fn [f] [(- (:effective-confidence f)) (subject-str f)]))
                  (take max-facts))

@@ -106,9 +106,9 @@
     :expect {:resolves-to "shoply.identity" :carried true}}
 
    {:id :q9 :capability :conflicts
-    :desc "five conflicts stand open for the human (two session-era, code-vs-decision, notes-planted, poison-vs-preference)"
+    :desc "six conflicts stand open for the human (two session-era, code-vs-decision, notes-planted, poison-vs-preference, poison-revenant)"
     :run (fn [s] (:open (core/conflicts s)))
-    :expect 5}
+    :expect 6}
 
    {:id :q10 :capability :conflicts
     :desc "they are the GraphQL stance clash and the KuzuDB and shoply.db decision violations"
@@ -116,7 +116,8 @@
                              (set (map (comp logic/normalize-entity-name obj)
                                        [fact candidate])))
                            (:conflicts (core/conflicts s)))))
-    :expect #{#{"graphql"} #{"kuzudb"} #{"shoplydb"} #{"restwithednbodies"}}}
+    :expect #{#{"graphql"} #{"kuzudb"} #{"shoplydb"} #{"restwithednbodies"}
+              #{"heroku" "flyio"}}}
 
    {:id :q11 :capability :forgetting
     :desc "the unrestated observation faded; the re-derived code fact stayed hot"
@@ -296,20 +297,23 @@
     :expect {:preference-untouched true :attack-flagged true :attack-capped 0.7}}
 
    {:id :q28 :capability :poisoning
-    :desc "the blast radius is one quarantinable episode — and the known leak: a false fact on a :many predicate coexists (the trust model, issue 23, closes this)"
+    :desc "the blast radius: one quarantinable episode; the resurrected Heroku flags as a revenant and never reads as settled truth in the compiled view (issue 23's fix)"
     :run (fn [s]
            (let [eps (into {} (map (juxt :id identity)) (store/-list-episodes s))
                  poisoned (filter #(= "session-4" (:ref (eps (:episode %))))
-                                  (store/-all-facts s))]
+                                  (store/-all-facts s))
+                 heroku (first (filter #(= "Heroku" (:object-lit %)) poisoned))
+                 view (context/compiled-view {:facts (store/-all-facts s)
+                                              :conflicts (:conflicts (core/conflicts s))
+                                              :now (core/now)})]
              {:all-from-one-episode (= 1 (count (distinct (map :episode poisoned))))
               :planted-facts (count poisoned)
-              :heroku-coexists-LEAK (boolean
-                                     (some #{"Heroku"}
-                                           (object-seq s {:entity "shoply"
-                                                          :predicate :core/deployed-via})))}))
+              :revenant-flagged (boolean (seq (:conflicts heroku)))
+              :out-of-current-view (nil? (re-find #"(?m)^- shoply deployed-via \"Heroku\"" view))}))
     :expect {:all-from-one-episode true
              :planted-facts 3
-             :heroku-coexists-LEAK true}}
+             :revenant-flagged true
+             :out-of-current-view true}}
 
    {:id :q29 :capability :shift-recovery
     :desc "Recovery@0 for the rename: the old name answered immediately after the shift pass, facts carried"

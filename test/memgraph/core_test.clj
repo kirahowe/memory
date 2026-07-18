@@ -538,3 +538,52 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"already exists"
                             (core/promote-predicate
                              s {:from "x/other" :to "core/depends-on"}))))))
+
+(deftest trust-defenses
+  (with-stores [s]
+    ;; a lived-and-died value: Heroku, invalidated by the migration
+    (let [dead (core/assert-fact s {:subject "svc" :predicate :core/deployed-via
+                                    :object "Heroku" :object-kind :literal
+                                    :t-valid #inst "2026-01-01"})]
+      (core/assert-fact s {:subject "svc" :predicate :core/deployed-via
+                           :object "Fly.io" :object-kind :literal
+                           :t-valid #inst "2026-03-10"})
+      (core/invalidate s {:fact-id (get-in dead [:fact :id])
+                          :at #inst "2026-03-10" :reason "migrated"}))
+
+    (testing "a low-trust source resurrecting the dead value flags against the live rival"
+      (let [r (core/assert-fact s {:subject "svc" :predicate :core/deployed-via
+                                   :object "Heroku" :object-kind :literal
+                                   :source-type :session-log :confidence 0.7})]
+        (is (= :flagged (:status r)))
+        (is (= :revenant (:reason r)))
+        (is (= ["Fly.io"] (mapv :object-lit (:candidates r))))))
+
+    (testing "a trusted source re-adding a dead value passes — the world really did move back"
+      (let [r (core/assert-fact s {:subject "svc" :predicate :core/deployed-via
+                                   :object "Rollback-Heroku" :object-kind :literal
+                                   :source-type :code})]
+        (is (= :created (:status r))))
+      ;; and the actually-dead value from a trusted source also passes
+      (let [r (core/assert-fact s {:subject "other" :predicate :core/deployed-via
+                                   :object "X" :object-kind :literal
+                                   :source-type :user-assertion})]
+        (is (= :created (:status r)))))
+
+    (testing "a weaker source never silently supersedes a stronger fact"
+      (core/assert-fact s {:subject "svc" :predicate :core/has-version
+                           :object "2.0.0" :source-type :code :confidence 0.95})
+      (let [r (core/assert-fact s {:subject "svc" :predicate :core/has-version
+                                   :object "9.9.9" :source-type :agent-note
+                                   :confidence 0.6})]
+        (is (= :flagged (:status r)))
+        (is (= :outranked (:reason r)))
+        (is (= ["2.0.0"]
+               (mapv :object-lit (:facts (core/get-facts s {:entity "svc"
+                                                            :predicate :core/has-version
+                                                            :min-confidence 0.9}))))
+            "the stronger truth still stands"))
+      (testing "equal-or-stronger sources still supersede cleanly"
+        (let [r (core/assert-fact s {:subject "svc" :predicate :core/has-version
+                                     :object "3.0.0" :source-type :code})]
+          (is (= :superseded (:status r))))))))
