@@ -27,7 +27,14 @@
 
 (deftest unknown-harness-fails-with-supported-list
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown harness"
-                        (harness/resolve-harness "codex"))))
+                        (harness/resolve-harness "windsurf"))))
+
+(deftest codex-harness-expectations
+  (let [h (harness/resolve-harness "codex")]
+    (is (= "/home/k/.codex/memories" ((:notes-dir h) "/home/k" "/ignored/project"))
+        "codex memories are per-machine, not per-project")
+    (is (= "memory_summary.md" (:inject-file h))
+        "the consolidated summary is also the injection slot")))
 
 (deftest managed-section-stripping
   (testing "content without markers passes through untouched"
@@ -179,3 +186,56 @@
     (testing "missing notes dir degrades gracefully"
       (let [r (notes/ingest! s {:dir (str dir "/nope") :extractor-fn (fn [_] "")})]
         (is (= :no-notes-dir (:status r)))))))
+
+(defn- context-compile-into [dir s]
+  ((requiring-resolve 'memgraph.context/compile!) s {:harness "codex" :dir dir}))
+
+(deftest cross-harness-consolidation
+  ;; the endgame (consuming-auto-memory §5): Claude Code notes and Codex
+  ;; memories about the same project merge into ONE graph — restatement
+  ;; across harnesses reinforces instead of duplicating, and each side's
+  ;; provenance stays its own
+  (let [claude-dir (temp-notes-dir)
+        codex-dir (temp-notes-dir)
+        s (mem/create)
+        _ (core/seed! s)
+        extraction (fn [& lines] (fn [_] (str/join "\n" lines)))]
+    (spit (str claude-dir "/MEMORY.md")
+          "# notes\nAuthService prefers argon2. We use trunk-based development.\n")
+    (spit (str codex-dir "/thread-042.txt")
+          "durable: AuthService prefers argon2. deploys via fly.io.\n")
+
+    (notes/ingest! s {:harness "claude-code" :dir claude-dir
+                      :extractor-fn (extraction
+                                     "{\"subject\":\"AuthService\",\"predicate\":\"prefers\",\"object\":\"argon2\",\"class\":\"preference\"}"
+                                     "{\"subject\":\"shoply\",\"predicate\":\"prefers\",\"object\":\"trunk-based development\",\"class\":\"preference\"}")})
+    (let [r (notes/ingest! s {:harness "codex" :dir codex-dir
+                              :extractor-fn (extraction
+                                             "{\"subject\":\"auth-service\",\"predicate\":\"prefers\",\"object\":\"argon2\",\"class\":\"preference\"}"
+                                             "{\"subject\":\"shoply\",\"predicate\":\"deployed_via\",\"object\":\"fly.io\",\"object_kind\":\"literal\"}")})]
+      (testing "the codex .txt note was ingested at all (generous glob)"
+        (is (= 1 (:files-changed r))))
+      (testing "cross-harness restatement reinforces through entity resolution"
+        (is (= 1 (get-in r [:counts :reinforced]))
+            "codex's auth-service aligned to claude's AuthService, same fact")
+        (let [fs (filter #(= "argon2" (:object-lit %))
+                         (:facts (core/get-facts s {:entity "AuthService"})))]
+          (is (= 1 (count fs)) "one fact, two harnesses agreeing"))))
+
+    (testing "each harness's episodes keep their own provenance"
+      (let [refs (map :ref (filter #(= :agent-note (:source-type %))
+                                   (store/-list-episodes s)))]
+        (is (some #(str/starts-with? % "claude-code:") refs))
+        (is (some #(str/starts-with? % "codex:") refs))))
+
+    (testing "each side contributes what only it knew"
+      (is (seq (:facts (core/get-facts s {:entity "shoply"
+                                          :predicate :core/deployed-via}))))
+      (is (contains? (set (map :object-lit (:facts (core/get-facts s {:entity "shoply"
+                                                                      :predicate :core/prefers}))))
+                     "trunk-based development")))
+
+    (testing "compile-context writes into codex's slot"
+      (context-compile-into codex-dir s)
+      (is (str/includes? (slurp (str codex-dir "/memory_summary.md"))
+                         harness/begin-marker)))))

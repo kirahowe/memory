@@ -267,7 +267,7 @@ Thin second front-end over `memgraph.core`. Stays trigger-gated as designed
 per-turn call counts grow — the ambient loop's hook cadence may be what
 finally trips it. *(TODO; comparison §4)*
 
-### 28. Codex notes adapter
+### 28. Codex notes adapter ✅ *(2026-07-10)*
 The second harness proves the `--harness` abstraction and its evidence files
 exercise richer episode provenance; the beginning of the cross-harness
 consolidator story nothing else in the field has. *(consuming-auto-memory

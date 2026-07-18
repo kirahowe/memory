@@ -53,14 +53,30 @@
 (def harnesses
   "Registry of known auto-memory layouts. :notes-dir is (fn [home abs-project-dir])
   -> the directory the harness writes notes into; :inject-file is the file the
-  harness auto-injects at session start (compile-context's write target)."
+  harness auto-injects at session start (compile-context's write target);
+  :note-glob is what counts as a note there (unknown layouts degrade
+  gracefully — anything matching is a plain note)."
   {:claude-code
    {:id :claude-code
     :label "Claude Code auto memory"
     :inject-file "MEMORY.md"
+    :note-glob "**.md"
     :notes-dir (fn [home abs-project-dir]
                  (str home "/.claude/projects/"
-                      (munge-project-path abs-project-dir) "/memory"))}})
+                      (munge-project-path abs-project-dir) "/memory"))}
+
+   ;; Codex memories are per-machine, not per-project (docs/consuming-auto-
+   ;; memory.md §5): thread summaries + durable entries + evidence files,
+   ;; consolidated into memory_summary.md — which is also its injection
+   ;; slot. The layout is undocumented upstream, so the glob is generous
+   ;; and unknown files are treated as plain notes.
+   :codex
+   {:id :codex
+    :label "Codex memories"
+    :inject-file "memory_summary.md"
+    :note-glob "**.{md,txt}"
+    :notes-dir (fn [home _abs-project-dir]
+                 (str home "/.codex/memories"))}})
 
 (defn resolve-harness
   "Harness keyword/string -> registry entry, or a deterministic failure

@@ -199,7 +199,11 @@ CLI / skill front-end        src/memgraph/cli.clj        arg parsing, JSON in/ou
    source-type `session-log`. `--dry-run` shows what would be ingested.
 3. **`ingest-notes`** — the ambient tier (`docs/consuming-auto-memory.md`):
    consumes the harness's auto-memory notes (Claude Code's
-   `~/.claude/projects/<project>/memory/`) as an extraction substrate —
+   `~/.claude/projects/<project>/memory/`; `--harness codex` for Codex's
+   `~/.codex/memories/`, making memgraph the cross-harness consolidator —
+   notes from both harnesses about the same project merge into one graph,
+   entity resolution aligns their vocabularies, and restatement across
+   harnesses reinforces) as an extraction substrate —
    already LLM-distilled, delta-detected per file so only changed notes reach
    the extractor, one episode per (file, revision) so provenance answers
    "which note file, at which state, said this." Notes flatten who-said-what,

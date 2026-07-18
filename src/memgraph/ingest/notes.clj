@@ -145,8 +145,8 @@
   compile → ingest → compile must not depend on the extractor's judgment.
   Content is trimmed before hashing so the whitespace seam a first
   compile-context splice leaves around the notes never reads as a change."
-  [dir]
-  (->> (fs/glob dir "**.md")
+  [dir note-glob]
+  (->> (fs/glob dir (or note-glob "**.md"))
        sort
        (keep (fn [p]
                (let [content (str/trim (harness/strip-managed-section (slurp (str p))))]
@@ -204,7 +204,7 @@
     (if-not (fs/directory? notes-dir)
       {:status :no-notes-dir :harness (name (:id h)) :dir (str notes-dir)
        :hint "no auto-memory directory for this project yet (or pass --dir)"}
-      (let [notes (read-notes notes-dir)
+      (let [notes (read-notes notes-dir (:note-glob h))
             changed (changed-notes notes (seen-hashes (store/-list-episodes s) (:id h)))
             run (or extractor-fn (partial llm/complete! (llm/command extractor)))
             entities (store/-list-entities s {})
