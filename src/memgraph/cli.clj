@@ -344,6 +344,11 @@
     (with-write-store opts
       (fn [s] (emit opts (core/load-dump s records))))))
 
+(defn cmd-mcp [{:keys [opts]}]
+  (let [serve! (requiring-resolve 'memgraph.mcp/serve!)]
+    (with-store opts
+      (fn [s] (serve! s (db-path opts))))))
+
 (defn cmd-stats [{:keys [opts]}]
   (with-store opts
     (fn [s] (emit opts (core/stats s)))))
@@ -531,6 +536,12 @@ Commands:
                         conflict links round-trip exactly (a raw restore;
                         the conflict machinery does NOT re-run). Refuses a
                         store that already holds data.
+  mcp                 Serve the graph over MCP (stdio): the store opens once
+                        per session instead of paying the ~350ms bb+pod cold
+                        start per call. Tools: memory_facts, memory_search,
+                        memory_recall, memory_history, memory_conflicts,
+                        memory_coach, memory_assert (lease-guarded).
+                        Wire up: claude mcp add memgraph -- bin/memgraph mcp
   stats               Store counts
   consolidate         Offline consolidation pass: LLM-summarize and close open
                         episodes that contain facts (summaries become
@@ -558,6 +569,7 @@ Commands:
    {:cmds ["recall"] :fn cmd-recall :spec {:min-hits {:coerce :long}}}
    {:cmds ["coach"] :fn cmd-coach :spec {:hook {:coerce :boolean}}}
    {:cmds ["outcome"] :fn cmd-outcome}
+   {:cmds ["mcp"] :fn cmd-mcp}
    {:cmds ["history"] :fn cmd-history}
    {:cmds ["search"] :fn cmd-search}
    {:cmds ["invalidate"] :fn cmd-invalidate}

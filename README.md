@@ -286,6 +286,18 @@ scans never reinforce — only intent writes do.
   exactly (a raw restore; the conflict machinery does not re-run). Multi-
   machine users of the ambient loop converge through the committed dump.
 
+## MCP front-end
+
+`bin/memgraph mcp` serves the graph over MCP stdio — the store (and the
+Datalevin pod) opens once per session instead of paying ~350ms of cold start
+per CLI call, which the ambient loop's per-prompt coach hook made worth
+fixing. Tools: `memory_facts`, `memory_search`, `memory_recall`,
+`memory_history`, `memory_conflicts`, `memory_coach`, and `memory_assert`
+(write-lease-guarded, full conflict machinery). Wire up:
+`claude mcp add memgraph -- bin/memgraph mcp`. The CLI and the skill remain
+the primary surface; MCP is the low-latency second front-end the handoff doc
+trigger-gated.
+
 ## Benchmark
 
 No LongMemEval/LoCoMo equivalent exists for codebase memory, so `bench/` is

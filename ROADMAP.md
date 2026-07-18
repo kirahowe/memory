@@ -261,7 +261,7 @@ pass. The visible cost is write throughput (~21ms/write through the pod's
 read-decide-write cycle) — batch ingestion at 10k+ facts wants a batched
 assert path before anything else does.*
 
-### 27. MCP front-end
+### 27. MCP front-end ✅ *(2026-07-10)*
 Thin second front-end over `memgraph.core`. Stays trigger-gated as designed
 (handoff §3.4): build when issue 11's latency numbers show cold-start pain or
 per-turn call counts grow — the ambient loop's hook cadence may be what

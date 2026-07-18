@@ -13,6 +13,7 @@
             [memgraph.judge-test]
             [memgraph.lease-test]
             [memgraph.load-test]
+            [memgraph.mcp-test]
             [memgraph.logic-test]
             [memgraph.notes-test]
             [memgraph.outcome-test]
@@ -33,6 +34,7 @@
                                           'memgraph.coach-test
                                           'memgraph.outcome-test
                                           'memgraph.lease-test
+                                          'memgraph.mcp-test
                                           'memgraph.context-test
                                           'memgraph.hooks-test
                                           'memgraph.judge-test
