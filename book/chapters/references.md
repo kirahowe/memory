@@ -24,7 +24,7 @@
 
 ## The ICLR 2026 MemAgents workshop (papers cited in this book)
 
-- *Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for Coding Agents?* (oral). [OpenReview pLi3A8bscP](https://openreview.net/forum?id=pLi3A8bscP)
+- Gloaguen, Mündler, Müller, Raychev, Vechev, *Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for Coding Agents?* (oral). [arXiv:2602.11988](https://arxiv.org/abs/2602.11988)
 - *StructMemEval: Evaluating Memory Structure in LLM Agents* (oral). [arXiv:2602.11243](https://arxiv.org/abs/2602.11243)
 - *ALMA: Learning to Continually Learn via Meta-learning Agentic Memory Designs* (oral). [arXiv:2602.07755](https://arxiv.org/abs/2602.07755)
 - *AMA-Bench: Evaluating Long-Horizon Memory for Agentic Applications* (oral). [ICLR virtual 10021275](https://iclr.cc/virtual/2026/10021275)
