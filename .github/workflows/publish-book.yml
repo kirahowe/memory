@@ -1,0 +1,76 @@
+name: Publish book
+
+# Builds the Clay/Quarto book on a runner and deploys it to GitHub Pages.
+# The published site tracks main; nothing pre-rendered is committed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'book/**'
+      - 'src/**'
+      - 'deps.edn'
+      - 'bb.edn'
+      - '.github/workflows/publish-book.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let a newer push cancel an in-flight build.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK (Clay runs on the JVM)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up babashka + the Clojure CLI
+        uses: DeLaGuardo/setup-clojure@13.2
+        with:
+          bb: latest
+          cli: latest
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Cache Maven deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ hashFiles('deps.edn') }}
+          restore-keys: m2-
+
+      - name: Build the book
+        run: bb book
+
+      - name: Configure Pages (self-enables on first run)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload the rendered book
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: book/rendered/_book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
