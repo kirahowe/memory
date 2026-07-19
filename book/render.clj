@@ -37,8 +37,12 @@
    :source-path chapters
    :base-target-path "book/rendered"
    ;; markdown chapters are not evaluated, only referenced; syncing the
-   ;; chapter directory into the target is how they reach the Quarto project
+   ;; chapter directory into the target is how they reach the Quarto project.
+   ;; keep-sync-root false drops the "book/chapters/" prefix so prose chapters
+   ;; land flat at the book root, matching the rendered .clj chapters (else
+   ;; they publish at /book/chapters/*.html while code chapters sit at /*.html).
    :subdirs-to-sync ["book/chapters"]
+   :keep-sync-root false
    :clean-up-target-dir true
    :show false
    ;; Clay's own quarto invocation is skipped; build! runs quarto after
