@@ -8,6 +8,11 @@ open-source/research systems + benchmarks. Focus is **functional
 requirements** — what each system can and cannot do for its user — not
 implementation. Claims marked ⚠ are single-source or vendor-self-reported.*
 
+*Updated 2026-07-20: added **memledger** (Apache-2.0 alpha, an OSS trust/
+governance layer for multi-agent memory) to §2.2, §3, §4, and §6 — the first
+OSS entrant to occupy the governed tier this doc previously called
+hosted-only.*
+
 -----
 
 ## 1. The functional dimensions
@@ -64,6 +69,7 @@ vendor-claimed. "Local" = user-owned files; "hosted" = vendor-side store.
 | **Vertex AI Memory Bank** (GA Dec 2025) | user/conv | **auto** topic-based extraction | similarity search by scope | managed records | ● **memory revisions** first-class (versioning + provenance) | ● consolidation resolves contradictions | ◐ revisions carry provenance | ● TTL | proprietary; API export only | ● IAM conditions | ● managed consolidation |
 | **AWS AgentCore Memory** (GA Oct 2025) | user/conv | **auto** via strategies (semantic/summary/preference/custom/self-managed) | namespace retrieval + typed filterable metadata | events + LT records | ◐ records link to source events | ● async consolidation with supersession | ◐ "strictly-consistent metadata" bypassing LLM inference | ● TTL | proprietary; API export | ● IAM, namespaces | ● managed async extraction/consolidation |
 | **Anthropic memory tool + Memory Stores** | app-defined | **agent-curated** file ops (view/create/str_replace/…) against `/memories` you host; no extraction | agent reads its own files; API injects "check memory first" preamble | plain files, any backend | ○ tool itself; ● Managed Agents **memory stores** (beta 2026-04): every mutation an immutable version + actor provenance | ○ delegated to the model | ◐ stores: actor provenance + audit; tool: none | ○ (docs recommend app-side expiry) | tool: fully yours; stores: Anthropic-hosted | ◐ stores: read-only vs read-write mounts | ○ model is the consolidation engine |
+| **memledger** (Apache-2.0 alpha `v0.5.0a0`, Jul 2026) — a *governance layer*, not a store | multi-agent conversational/RAG memory; enterprise trust & compliance | explicit SDK/MCP writes carrying source + confidence; **no extraction of its own** — it wraps your writes to any vector backend | vector similarity search with **confidence gating** (`min_threshold`/`flag_threshold` → PASS/FLAG); MCP server | vectors (pgvector) **+ a trust graph** of CONFLICTS + derivation edges over any backend | ○ no valid/transaction time, no as-of | ◐ near-duplicate detection at write → CONFLICTS edges flagged; no supersession, no temporal close | ◐ **provenance chains spanning agents/sessions + per-memory confidence; weakest-link effective confidence** (bounded by min ancestor in the chain); no epistemic classes | ◐ **RTBF cascades**: deletion propagates through derivatives with a compliance-grade audit trail; no time decay | Apache-2.0 OSS (`memledger[oss]` = Postgres+pgvector+local embeddings); AWS Aurora/Bedrock + OpenSearch paths; **server/Helm/K8s**, not local-binary | ● **Namespace RBAC** (declarative per-agent access over hierarchical namespaces) + OpenTelemetry trust attributes | ○ (MQS 0–100 quality score + **MAI** eval wired to RAGAS are *measurement*, not a consolidation pass) |
 
 ### 2.3 Open-source & research systems
 
@@ -121,10 +127,11 @@ them (not announced, not papered):
 | **Mechanical (no-LLM) invalidation from code changes** | **memgraph** (reconciling code ingester), Aider (by recomputation, ephemeral), Copilot (validation gate) | all other persistent systems |
 | **Principled forgetting** | Copilot (28-day unused TTL), **memgraph** (disuse half-life + reinforcement ceilings, commitments exempt), agemem (deterministic eviction), Vertex/AgentCore/LangGraph (plain TTL), Mem0 (soft ranking bias) | Zep (nothing), Letta, Cognee (usage reweighting only), all other built-ins; learned eviction (Memory-R1) not in any product |
 | **Automatic background extraction** | Claude Code, Codex, Copilot, Windsurf, Mem0, Zep, Cognee (opt-in), supermemory, Vertex, AgentCore, ctxgraph | Cursor (removed it), Gemini CLI, Letta (by design), Anthropic memory tool (by design), **memgraph** (session-extract is invoked, not ambient) |
-| **Provenance with citations/evidence** | Copilot (citations), Codex (evidence files), Zep (episodes), **memgraph** (episodes + source-type + confidence), Anthropic memory stores (actor + versions), AgentCore (consistent metadata) | all file-pile systems, Mem0, A-MEM (actively destroys it) |
+| **Provenance with citations/evidence** | Copilot (citations), Codex (evidence files), Zep (episodes), **memgraph** (episodes + source-type + confidence), Anthropic memory stores (actor + versions), AgentCore (consistent metadata), memledger (cross-agent derivation chains) | all file-pile systems, Mem0, A-MEM (actively destroys it) |
+| **Chain/derivation confidence propagation** (effective confidence bounded by ancestors, not just the stored number) | **memledger only** (weakest-link: min over the derivation chain) | everyone — memgraph derives effective confidence too, but from **time decay + per-source ceilings**, not chain ancestry; the two are orthogonal |
 | **Consolidation pass** | Codex (dedicated model), Letta (sleep-time agents), supermemory, Cognee (memify), **memgraph** (`consolidate`), Vertex/AgentCore, LangMem | Cursor, Windsurf, Gemini, Copilot, Zep (pipeline-inline only) |
 | **Structured + experiential in one store** | **memgraph** (code facts + decisions/preferences in one graph) — the open problem per OSS Insight's field survey; engram is experiential-only, the code-KG wave is structural-only | essentially everyone |
-| **Team sharing with governance** | Copilot (repo memories + admin controls), Cursor Team rules, Zep ABAC, hyperscalers (IAM), Cognee RBAC | all local-first systems including memgraph (ACL fields reserved, unenforced) |
+| **Team sharing with governance** | Copilot (repo memories + admin controls), Cursor Team rules, Zep ABAC, hyperscalers (IAM), Cognee RBAC, **memledger (Namespace RBAC — the first OSS entrant)** | most local-first systems including memgraph (ACL fields reserved, unenforced) |
 | **Codebase-memory benchmark** | **memgraph** (own seed: shoply fixture, 15 mechanics Qs + LLM layer), a handful of 2026 preprints (SWE Context Bench, Memory Transfer Learning) | no LoCoMo/LongMemEval-equivalent standard exists yet |
 
 **What *nobody* ships**, anywhere in the field:
@@ -133,6 +140,8 @@ them (not announced, not papered):
   closest via filter composition).
 - Memory and permissions in the same graph (the synthesis doc's §6.4
   prediction) — ACLs where they exist are bolted onto the platform layer.
+  memledger's Namespace RBAC is the closest OSS attempt, but it's a governance
+  layer *over* the store, not permissions expressed as edges in the memory graph.
 - Portable agent identity — Letta's `.af` has no verified external adoption;
   the memory-layer standard remains unwritten.
 - Learned eviction in production — Memory-R1 (ACL 2026) exists, no product
@@ -195,7 +204,11 @@ them (not announced, not papered):
    ingesters (the procedural-memory growth path) are still TODO.
 5. **Single-writer, no ACL enforcement, no team story** — fine for the stated
    beachhead, but the field's governed tier (Copilot, Zep, hyperscalers) shows
-   where enterprise demand went.
+   where enterprise demand went — and as of July 2026 that tier has its first
+   OSS entrant, memledger (Apache-2.0), which packages Namespace RBAC, RTBF
+   cascades, and an attribution-integrity eval. The governed tier is no longer
+   hosted-only, so "we're local-first, governance is someone else's layer" is a
+   weaker answer than it was a year ago.
 6. **No independent validation.** Everyone's benchmark numbers are self-run —
    but memgraph's are too, and it has ~0 users. The credibility bar in this
    field is now high (see §5).
@@ -300,6 +313,23 @@ revises:
    proved out; the new one to watch is the code-KG MCP wave — structural
    indexes are becoming free/commodity, which *raises* the value of the
    experiential+temporal layer they don't attempt.
+9. **The governed tier got an OSS entrant, and it corroborates four bets.**
+   memledger (Apache-2.0 alpha `v0.5.0a0`, `memledger-ai` org, Jul 2026) is a
+   trust/governance *layer* between agents and a vector store — a different game
+   than memgraph (multi-agent conversational/RAG memory + compliance, not a
+   codebase temporal KG). It independently arrived at four primitives this doc
+   tracks: **provenance chains, effective-confidence-as-derived-not-stored,
+   conflict-as-edge (CONFLICTS) rather than overwrite, and forgetting-with-an-
+   audit-trail (RTBF cascades).** Same signal engram gave — these are the right
+   primitives — now from the governance/RAG direction. Its confidence model
+   (weakest-link over the derivation chain) and forgetting model (RTBF cascade)
+   are *orthogonal* mechanisms to memgraph's (time decay + per-source ceilings;
+   non-lossy disuse decay), reached for different reasons. What it does **not**
+   have: bi-temporality, as-of/history, or epistemic typing — memgraph's two
+   strongest differentiators survive intact. What it **does** have that memgraph
+   doesn't: a shipped OSS governed tier (Namespace RBAC + OpenTelemetry) and an
+   attribution-integrity eval (MAI) wired into RAGAS. It is alpha and
+   server/Postgres-based, so treat maturity claims with the §5 caution.
 
 -----
 
@@ -335,6 +365,10 @@ External (fetched 2026-07-09; abbreviated — key primary sources only):
   (github.com/rohansx/ctxgraph); agemem (github.com/gianpd/agemem); A-MEM
   (arXiv 2502.12110, NeurIPS 2025); OpenAI temporal-agents cookbook;
   spec-kit (github.com/github/spec-kit)
+- memledger (fetched 2026-07-20): memledger.com + /docs; pypi.org/project/
+  memledger (`v0.5.0a0`, Apache-2.0); `memledger-ai` GitHub org (memledger-core
+  SDK/MCP/Helm, memledger-ui trust graph, memledger-docs); author
+  github.com/ratnopamc
 - Memory-R1 (arXiv 2508.19828, ACL 2026); MemoryOS (arXiv 2506.06326);
   "Forgetful but Faithful"/FiFA (arXiv 2512.12856); LoCoMo; LongMemEval
   (+V2 arXiv 2605.12493); MemoryBench (github.com/supermemoryai/memorybench);
