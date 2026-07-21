@@ -14,22 +14,28 @@
 
 (def chapters
   ;; index.md becomes the book's index page (see build!); the rest render in
-  ;; this order. Prose chapters are synced in as markdown; .clj chapters are
-  ;; evaluated by Clay.
-  ["background.md"
-   "mental_model.md"
-   "quickstart.clj"
-   "temporal.clj"
-   "conflicts.clj"
-   "retrieval.clj"
-   "ambient.clj"
-   "multiwriter.clj"
-   "internals.clj"
-   "advanced.md"
-   "benchmark.md"
-   "comparison.md"
-   "cli_reference.md"
-   "references.md"])
+  ;; this order, grouped into the three parts that the index page's "How to
+  ;; read this book" section describes. Each {:part <title> :chapters [...]}
+  ;; entry is turned by Clay into a Quarto book part divider; the part titles
+  ;; here must stay in sync with the labels on the index page. Prose chapters
+  ;; are synced in as markdown; .clj chapters are evaluated by Clay.
+  [{:part "Part I — Foundations"
+    :chapters ["background.md"
+               "mental_model.md"]}
+   {:part "Part II — The System in Practice"
+    :chapters ["quickstart.clj"
+               "temporal.clj"
+               "conflicts.clj"
+               "retrieval.clj"
+               "ambient.clj"
+               "multiwriter.clj"
+               "internals.clj"]}
+   {:part "Part III — Operations and Reference"
+    :chapters ["advanced.md"
+               "benchmark.md"
+               "comparison.md"
+               "cli_reference.md"
+               "references.md"]}])
 
 (def config
   {:format [:quarto :book]

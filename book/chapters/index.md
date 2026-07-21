@@ -22,23 +22,23 @@ working system, and the measurements.
 
 The book has three parts.
 
-**Part I** is prose. It explains the problem agent memory is trying to solve,
-what the research literature settled in 2025 and 2026, and the mental model
-behind claimgraph's design. If you read nothing else, read the mental model
-chapter; every other chapter leans on it.
+**Part I — Foundations** is prose. It explains the problem agent memory is
+trying to solve, what the research literature settled in 2025 and 2026, and the
+mental model behind claimgraph's design. If you read nothing else, read the
+mental model chapter; every other chapter leans on it.
 
-**Part II** is executable. Each chapter is a real Clojure namespace, evaluated
-against the actual claimgraph source at book build time by
-[Clay](https://scicloj.github.io/clay/). The outputs you see are not
+**Part II — The System in Practice** is executable. Each chapter is a real
+Clojure namespace, evaluated against the actual claimgraph source at book build
+time by [Clay](https://scicloj.github.io/clay/). The outputs you see are not
 transcripts pasted into the text; they are produced fresh on every build, so
 if the code drifts from the book, the build breaks. These chapters use the
 in-memory store backend, which shares every line of decision logic with the
 Datalevin backend through a storage protocol. The CLI equivalents appear
 alongside as shell blocks.
 
-**Part III** is operational: advanced usage, the benchmark and its results,
-a comparison with the other memory systems in the field as of July 2026, a
-CLI reference, and the bibliography.
+**Part III — Operations and Reference** is operational: advanced usage, the
+benchmark and its results, a comparison with the other memory systems in the
+field as of July 2026, a CLI reference, and the bibliography.
 
 ## Building the book
 
