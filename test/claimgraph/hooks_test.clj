@@ -66,6 +66,15 @@
       (let [r (hooks/install! {:project project})]
         (is (= "bin/claim hooks run --harness claude-code" (:command r)))))))
 
+(deftest install-honors-a-settings-file-override
+  (let [project (str (fs/create-temp-dir {:prefix "claimgraph-hooks-test"}))
+        target (str (fs/path project ".claude" "settings.local.json"))
+        r (hooks/install! {:project project :settings-file target})]
+    (is (= target (:settings r)))
+    (is (fs/exists? target))
+    (is (not (fs/exists? (fs/path project ".claude" "settings.json")))
+        "the default location is not touched when overridden")))
+
 ;; ---------------------------------------------------------------------------
 ;; Shell: the SessionEnd pass
 ;; ---------------------------------------------------------------------------

@@ -174,14 +174,15 @@
   notes around it are untouched.
 
   opts: :harness (default claude-code) :project (default cwd)
-        :dir (override the resolved notes dir) :budget (bytes, default 25000)
+        :dir (override the resolved notes dir)
+        :inject-file (override the write target; relative to the notes dir
+                      or absolute) :budget (bytes, default 25000)
+        :ctx (harness-resolution context {:home :env}; injectable, tests)
         :dry-run (return the block, write nothing) :now (injectable clock)"
-  [s {:keys [harness project dir budget dry-run now]}]
+  [s {:keys [harness inject-file budget dry-run now] :as opts}]
   (let [h (harness/resolve-harness harness)
-        notes-dir (or dir
-                      ((:notes-dir h) (System/getProperty "user.home")
-                                      (str (fs/canonicalize (or project ".")))))
-        target (str (fs/path notes-dir (:inject-file h)))
+        notes-dir (harness/notes-path h (select-keys opts [:dir :project :ctx]))
+        target (harness/inject-target h notes-dir inject-file)
         now (or now (core/now))
         inputs {:facts (store/-all-facts s)
                 :conflicts (:conflicts (core/conflicts s))
@@ -198,6 +199,7 @@
     (if dry-run
       (assoc result :status :dry-run :content inner)
       (do (fs/create-dirs notes-dir)
+          (some-> (fs/parent target) fs/create-dirs)
           (spit target (harness/splice-managed-section
                         (when (fs/exists? target) (slurp target))
                         inner))

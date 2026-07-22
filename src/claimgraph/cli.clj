@@ -7,22 +7,29 @@
             [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str]
+            [claimgraph.config :as config]
             [claimgraph.core :as core]
             [claimgraph.logic :as logic]
             [claimgraph.store :as store]))
 
 (def ^:private global-spec
-  {:db {:desc "Database path (default: $CLAIMGRAPH_DB or ./.claimgraph/db)"}
+  {:db {:desc "Database path (default: $CLAIMGRAPH_DB, .claimgraph/config.json, or ./.claimgraph/db)"}
    :pretty {:coerce :boolean :desc "Pretty-print JSON output"}})
 
 (defn- db-path [opts]
-  (or (:db opts) (System/getenv "CLAIMGRAPH_DB") ".claimgraph/db"))
+  (config/value :db opts))
+
+(defn- llm-command-opts
+  "Commands whose LLM shell-out is --command: same resolution chain as
+  --extractor (flag > $CLAIMGRAPH_LLM_CMD > config extractor > claude -p)."
+  [opts]
+  (update opts :command #(or % (config/value :extractor {}))))
 
 (defn- emit [opts data]
   (println (json/generate-string data {:pretty (boolean (:pretty opts))})))
 
 (defn- evidence-dir [opts]
-  (or (:evidence-dir opts)
+  (or (config/value :evidence-dir opts)
       ((requiring-resolve 'claimgraph.evidence/default-dir) (db-path opts))))
 
 (defn- parse-time [s] (logic/parse-instant s))
@@ -147,7 +154,8 @@
                                    'claimgraph.judge/judge-conflicts!))]
     (with-write-store opts
       (fn [s]
-        (emit opts (judge s (select-keys opts [:command :resolve :min-confidence])))))))
+        (emit opts (judge s (select-keys (llm-command-opts opts)
+                                         [:command :resolve :min-confidence])))))))
 
 (defn cmd-entity-ensure [{:keys [opts]}]
   (with-write-store opts
@@ -227,14 +235,16 @@
       (fn [s] (emit opts (ingest-code s (select-keys opts [:dir :scope])))))))
 
 (defn cmd-session-extract [{:keys [opts]}]
-  (let [extract (requiring-resolve 'claimgraph.ingest.session/extract!)]
+  (let [opts (config/with-defaults opts [:extractor])
+        extract (requiring-resolve 'claimgraph.ingest.session/extract!)]
     (with-write-store opts
       (fn [s]
         (emit opts (extract s (assoc (select-keys opts [:file :ref :extractor :dry-run])
                                      :evidence-dir (evidence-dir opts))))))))
 
 (defn cmd-ingest-notes [{:keys [opts]}]
-  (let [ingest-notes (requiring-resolve 'claimgraph.ingest.notes/ingest!)]
+  (let [opts (config/with-defaults opts [:harness :notes-dir :extractor])
+        ingest-notes (requiring-resolve 'claimgraph.ingest.notes/ingest!)]
     (with-write-store opts
       (fn [s]
         (emit opts (ingest-notes s (assoc (select-keys opts [:harness :dir :project
@@ -247,7 +257,8 @@
       (fn [s] (emit opts (ingest-adr s (select-keys opts [:dir :file :dry-run])))))))
 
 (defn cmd-ingest-failure [{:keys [opts]}]
-  (let [extract (requiring-resolve 'claimgraph.ingest.failure/extract!)]
+  (let [opts (config/with-defaults opts [:extractor])
+        extract (requiring-resolve 'claimgraph.ingest.failure/extract!)]
     (with-write-store opts
       (fn [s]
         (emit opts (extract s (assoc (select-keys opts [:file :ref :context
@@ -275,11 +286,13 @@
                                              {:type :evidence-missing :evidence hash}))})))))
 
 (defn cmd-compile-context [{:keys [opts]}]
-  (let [compile-context (requiring-resolve 'claimgraph.context/compile!)]
+  (let [opts (config/with-defaults opts [:harness :notes-dir :inject-file])
+        compile-context (requiring-resolve 'claimgraph.context/compile!)]
     (with-store opts
       (fn [s]
         (emit opts (compile-context s (select-keys opts [:harness :dir :project
-                                                         :budget :dry-run])))))))
+                                                         :inject-file :budget
+                                                         :dry-run])))))))
 
 (defn cmd-coach [{:keys [opts args]}]
   (let [consult (requiring-resolve 'claimgraph.coach/consult)]
@@ -311,19 +324,23 @@
       (fn [s] (emit opts (outcome! s (db-path opts) {:valence valence}))))))
 
 (defn cmd-hooks-run [{:keys [opts]}]
-  (let [run (requiring-resolve 'claimgraph.hooks/run!)]
+  (let [opts (-> (config/with-defaults opts [:harness :notes-dir :inject-file
+                                             :extractor :consolidate-days])
+                 llm-command-opts)
+        run (requiring-resolve 'claimgraph.hooks/run!)]
     (with-write-store opts
       (fn [s]
-        (emit opts (run s (assoc (select-keys opts [:harness :project :dir :extractor
-                                                    :consolidate-days :command
+        (emit opts (run s (assoc (select-keys opts [:harness :project :dir :inject-file
+                                                    :extractor :consolidate-days :command
                                                     :resolve :min-confidence])
                                  :db (db-path opts)
                                  :evidence-dir (evidence-dir opts))))))))
 
 (defn cmd-hooks-install [{:keys [opts]}]
-  (let [install (requiring-resolve 'claimgraph.hooks/install!)]
-    (emit opts (install (select-keys opts [:project :harness :consolidate-days
-                                           :coach :bin])))))
+  (let [opts (config/with-defaults opts [:harness :settings-file :consolidate-days])
+        install (requiring-resolve 'claimgraph.hooks/install!)]
+    (emit opts (install (select-keys opts [:project :harness :settings-file
+                                           :consolidate-days :coach :bin])))))
 
 (defn cmd-dump [{:keys [opts]}]
   (with-store opts
@@ -367,18 +384,83 @@
   (let [consolidate (requiring-resolve 'claimgraph.consolidate/consolidate!)]
     (with-write-store opts
       (fn [s]
-        (emit opts (consolidate s (select-keys opts [:command :resolve :min-confidence
-                                                     :min-usage])))))))
+        (emit opts (consolidate s (select-keys (llm-command-opts opts)
+                                               [:command :resolve :min-confidence
+                                                :min-usage])))))))
+
+(def ^:private setup-persist-keys
+  "Settings a `claim setup` invocation may persist to .claimgraph/config.json —
+  only when passed explicitly, so the config file records choices, not defaults."
+  [:db :harness :notes-dir :inject-file :settings-file :skills-dir
+   :extractor :consolidate-days])
+
+(defn cmd-setup [{:keys [opts]}]
+  (let [chosen (select-keys opts setup-persist-keys)
+        opts (config/with-defaults opts [:harness :notes-dir :settings-file
+                                         :skills-dir :consolidate-days])
+        run! (requiring-resolve 'claimgraph.setup/run!)]
+    (emit opts
+          (run! (assoc (select-keys opts [:project :bin :db :harness :settings-file
+                                          :skills-dir :consolidate-days :coach
+                                          :mcp :dry-run])
+                       :chosen chosen
+                       :init-fn (fn []
+                                  (with-write-store opts
+                                    (fn [s]
+                                      {:status :initialized
+                                       :db (str (fs/canonicalize (db-path opts)))
+                                       :predicates (count (store/-list-predicates s {}))}))))))))
+
+(defn cmd-config [{:keys [opts]}]
+  (let [opts+ (config/with-defaults opts [:harness :notes-dir :inject-file
+                                          :settings-file :skills-dir])
+        h ((requiring-resolve 'claimgraph.harness/resolve-harness) (:harness opts+))
+        notes-dir ((requiring-resolve 'claimgraph.harness/notes-path)
+                   h (select-keys opts+ [:dir :project]))
+        project (str (fs/canonicalize (or (:project opts+) ".")))]
+    (emit opts
+          (assoc (config/describe opts)
+                 :resolved
+                 {:db (str (fs/absolutize (db-path opts)))
+                  :evidence-dir (str (fs/absolutize (evidence-dir opts)))
+                  :harness (name (:id h))
+                  :notes-dir notes-dir
+                  :inject-file ((requiring-resolve 'claimgraph.harness/inject-target)
+                                h notes-dir (:inject-file opts+))
+                  :settings-file (str (or (:settings-file opts+)
+                                          (fs/path project ".claude" "settings.json")))
+                  :skills-dir (str (or (:skills-dir opts+)
+                                       (fs/path project ".claude" "skills")))}))))
 
 (def help-text "claimgraph — bi-temporal, epistemically-typed knowledge graph for coding-agent memory
 
 Usage: claim <command> [options]
 
-All commands accept --db PATH (default $CLAIMGRAPH_DB or ./.claimgraph/db) and --pretty.
-All output is JSON on stdout; errors are JSON on stderr with exit code 1.
+All commands accept --db PATH and --pretty. All output is JSON on stdout;
+errors are JSON on stderr with exit code 1.
+
+Nothing about file locations is assumed. Every setting resolves through one
+precedence chain — CLI flag > environment variable > .claimgraph/config.json
+> default — and `claim config` shows each one's value and where it came from.
+Harness defaults honor the harness's own relocations ($CLAUDE_CONFIG_DIR,
+$CODEX_HOME).
 
 Commands:
+  setup               One-shot onboarding for a project (idempotent, safe to
+                        re-run): create + seed the store, persist non-default
+                        choices to .claimgraph/config.json, gitignore the live
+                        store, install the agent skill, wire the ambient loop
+                        (hooks install). [--project DIR] [--db PATH]
+                        [--harness claude-code] [--notes-dir DIR]
+                        [--inject-file F] [--settings-file F] [--skills-dir D]
+                        [--extractor CMD] [--consolidate-days 7] [--coach]
+                        [--mcp] (also register the MCP server in .mcp.json)
+                        [--bin claim] [--dry-run]
+  config              Show every setting: resolved value, which layer set it
+                        (flag/env/config-file/default), and the fully resolved
+                        paths (db, notes dir, inject file, settings file, ...)
   init                Create the store and seed the predicate vocabulary
+                        (setup calls this; use directly for a bare store)
   assert              Assert a fact through validation + conflict resolution
                         --subject S --predicate P --object O
                         [--subject-type T] [--object-type T] [--object-kind entity|literal]
@@ -479,6 +561,10 @@ Commands:
                         extracts only those, one episode per (file, revision).
                         [--harness claude-code] [--project DIR] [--dir NOTES_DIR]
                         [--dry-run] [--extractor \"claude -p\"]
+                        The notes dir defaults per harness (honoring
+                        $CLAUDE_CONFIG_DIR / $CODEX_HOME); override with
+                        --dir, $CLAIMGRAPH_NOTES_DIR, or notes-dir in the
+                        project config.
                         Notes ingest as agent inference: source-type agent-note,
                         confidence capped at 0.65, never commitments (a decision
                         reported by a note is demoted to an observation). No
@@ -513,13 +599,19 @@ Commands:
                         facts by effective confidence (code-derived facts
                         excluded — the view carries what the code can't say).
                         [--harness claude-code] [--project DIR] [--dir NOTES_DIR]
+                        [--inject-file F] (write target; default per harness,
+                        relative to the notes dir or absolute)
                         [--budget 25000] [--dry-run]
-  hooks install       Wire the ambient loop into the project's Claude Code
-                        hooks (.claude/settings.json, SessionEnd): every
-                        session ends with `hooks run`. Idempotent; foreign
-                        hooks and other settings are preserved.
+  hooks install       Wire the ambient loop into the project's hook settings
+                        (SessionEnd): every session ends with `hooks run`.
+                        Idempotent; foreign hooks and other settings are
+                        preserved. Default target
+                        <project>/.claude/settings.json — override with
+                        --settings-file / $CLAIMGRAPH_SETTINGS_FILE /
+                        settings-file in the project config.
                         [--project DIR] [--harness claude-code]
-                        [--consolidate-days 7] [--coach] [--bin claim]
+                        [--settings-file F] [--consolidate-days 7] [--coach]
+                        [--bin claim]
                         --coach also wires a UserPromptSubmit hook running
                         the gated push (see coach).
   hooks run           The SessionEnd pass: ingest-notes, compile-context,
@@ -527,9 +619,9 @@ Commands:
                         7 days; 0 = always). Stages report independently —
                         an extractor failure never blocks the deterministic
                         recompile. [--harness claude-code] [--project DIR]
-                        [--dir NOTES_DIR] [--consolidate-days 7]
-                        [--extractor CMD] [--command CMD] [--resolve]
-                        [--min-confidence 0.8]
+                        [--dir NOTES_DIR] [--inject-file F]
+                        [--consolidate-days 7] [--extractor CMD]
+                        [--command CMD] [--resolve] [--min-confidence 0.8]
   outcome             Close the loop on retrieved facts: claim outcome
                         accepted|rejected. Read verbs (facts/search/recall/
                         coach) log which facts they surfaced (<db>.retrievals);
@@ -578,7 +670,11 @@ Commands:
   (println help-text))
 
 (def table
-  [{:cmds ["init"] :fn cmd-init}
+  [{:cmds ["setup"] :fn cmd-setup
+    :spec {:coach {:coerce :boolean} :mcp {:coerce :boolean}
+           :dry-run {:coerce :boolean} :consolidate-days {:coerce :long}}}
+   {:cmds ["config"] :fn cmd-config}
+   {:cmds ["init"] :fn cmd-init}
    {:cmds ["assert"] :fn cmd-assert :spec {:confidence {:coerce :double}}}
    {:cmds ["facts"] :fn cmd-facts :spec {:min-confidence {:coerce :double}
                                          :include-invalidated {:coerce :boolean}}}

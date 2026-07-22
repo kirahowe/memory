@@ -2,13 +2,20 @@
   "Per-harness expectations for the ambient loop (docs/consuming-auto-memory.md),
   pinned in one place: where each coding harness keeps its auto-memory notes,
   which file it auto-injects, and the markers delimiting the managed section
-  claimgraph compiles into that file. Everything here is pure except notes-dir's
-  home-directory lookup, passed in by callers where testability matters.
+  claimgraph compiles into that file.
+
+  No location is assumed: every default here is computed from an injectable
+  context (home dir + env), honors the harness's own relocation variables
+  (Claude Code's $CLAUDE_CONFIG_DIR, Codex's $CODEX_HOME), and is overridable
+  outright — --dir / $CLAIMGRAPH_NOTES_DIR / notes-dir in the project config
+  for the notes directory, --inject-file / $CLAIMGRAPH_INJECT_FILE /
+  inject-file for the injection target. `claim config` shows what resolves.
 
   The managed-section markers are the echo-loop guard's anchor: ingest-notes
   strips the section before hashing and extraction (our compiled view is never
   re-consumed), and compile-context rewrites only what sits between them."
-  (:require [clojure.string :as str]
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [claimgraph.logic :as logic]))
 
 (def begin-marker "<!-- claimgraph:managed:begin -->")
@@ -51,8 +58,11 @@
   (str/replace (str abs-path) #"[^A-Za-z0-9]" "-"))
 
 (def harnesses
-  "Registry of known auto-memory layouts. :notes-dir is (fn [home abs-project-dir])
-  -> the directory the harness writes notes into; :inject-file is the file the
+  "Registry of known auto-memory layouts. :notes-dir is
+  (fn [{:keys [home env]} abs-project-dir]) -> the directory the harness
+  writes notes into, computed purely from the passed context (env is a
+  string->string map, so the harness's own relocation variables are honored
+  without touching the real environment); :inject-file is the file the
   harness auto-injects at session start (compile-context's write target);
   :note-glob is what counts as a note there (unknown layouts degrade
   gracefully — anything matching is a plain note)."
@@ -61,9 +71,9 @@
     :label "Claude Code auto memory"
     :inject-file "MEMORY.md"
     :note-glob "**.md"
-    :notes-dir (fn [home abs-project-dir]
-                 (str home "/.claude/projects/"
-                      (munge-project-path abs-project-dir) "/memory"))}
+    :notes-dir (fn [{:keys [home env]} abs-project-dir]
+                 (str (or (get env "CLAUDE_CONFIG_DIR") (str home "/.claude"))
+                      "/projects/" (munge-project-path abs-project-dir) "/memory"))}
 
    ;; Codex memories are per-machine, not per-project (docs/consuming-auto-
    ;; memory.md §5): thread summaries + durable entries + evidence files,
@@ -75,8 +85,9 @@
     :label "Codex memories"
     :inject-file "memory_summary.md"
     :note-glob "**.{md,txt}"
-    :notes-dir (fn [home _abs-project-dir]
-                 (str home "/.codex/memories"))}})
+    :notes-dir (fn [{:keys [home env]} _abs-project-dir]
+                 (str (or (get env "CODEX_HOME") (str home "/.codex"))
+                      "/memories"))}})
 
 (defn resolve-harness
   "Harness keyword/string -> registry entry, or a deterministic failure
@@ -88,3 +99,28 @@
                     {:type :unknown-harness
                      :harness (name k)
                      :supported (mapv name (keys harnesses))}))))
+
+(defn env-ctx
+  "The real machine's context for notes-dir resolution. The only impure seam
+  in this namespace; tests pass their own ctx instead."
+  []
+  {:home (System/getProperty "user.home")
+   :env (into {} (System/getenv))})
+
+(defn notes-path
+  "Resolve where the harness keeps its auto-memory notes — the one resolver
+  every consumer (ingest-notes, compile-context, hooks run) goes through.
+  An explicit :dir wins outright; otherwise the harness default, computed
+  from :ctx (injectable; defaults to the real home + env, so
+  CLAUDE_CONFIG_DIR / CODEX_HOME relocations are honored)."
+  [h {:keys [dir project ctx]}]
+  (str (or dir
+           ((:notes-dir h) (or ctx (env-ctx))
+                           (str (fs/canonicalize (or project ".")))))))
+
+(defn inject-target
+  "Resolve the file compile-context writes: an explicit override (absolute,
+  or relative to the notes dir) beats the harness default."
+  [h notes-dir inject-file]
+  (let [f (or inject-file (:inject-file h))]
+    (str (if (fs/absolute? f) (fs/path f) (fs/path notes-dir f)))))

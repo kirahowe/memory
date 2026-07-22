@@ -1,16 +1,24 @@
 # CLI reference
 
-Every command accepts `--db PATH` (default `$CLAIMGRAPH_DB`, then
-`./.claimgraph/db`) and `--pretty`. Output is JSON on stdout; errors are JSON
-on stderr with exit code 1, so everything composes with shell tooling and
-the skill alike. `bin/claim help` is the authoritative, always-current
+Every command accepts `--db PATH` and `--pretty`. Output is JSON on stdout;
+errors are JSON on stderr with exit code 1, so everything composes with
+shell tooling and the skill alike. Every setting resolves flag > env var >
+`.claimgraph/config.json` > default; `claim config` shows each one's value
+and provenance. `bin/claim help` is the authoritative, always-current
 version of this list.
+
+## Onboarding and configuration
+
+| Command | Does |
+|---|---|
+| `setup` | One-shot project onboarding, idempotent: store + seed, config persisted, live store gitignored, agent skill installed, ambient loop wired; `--dry-run`, `--mcp` |
+| `config` | Every setting: resolved value, the layer that set it, and the fully resolved paths |
 
 ## Store and writes
 
 | Command | Does |
 |---|---|
-| `init` | Create the store and seed the 23-predicate vocabulary |
+| `init` | Create the store and seed the 23-predicate vocabulary (`setup` calls this) |
 | `assert` | One fact through validation and conflict resolution: `--subject --predicate --object`, with `--class`, `--source-type`, `--confidence`, `--scope`, `--valid-from/--valid-until`, `--on-conflict` |
 | `invalidate` | Close a fact's validity interval: `--fact-id`, `--reason`, `--at` (when it stopped being true) |
 | `ingest` | Batch-assert JSONL (file or stdin) under one episode |

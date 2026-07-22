@@ -22,8 +22,37 @@
 
 (deftest claude-code-notes-dir
   (let [dir ((get-in harness/harnesses [:claude-code :notes-dir])
-             "/home/kira" "/home/kira/dev/memory")]
+             {:home "/home/kira" :env {}} "/home/kira/dev/memory")]
     (is (= "/home/kira/.claude/projects/-home-kira-dev-memory/memory" dir))))
+
+(deftest notes-dir-honors-harness-relocation-env
+  (testing "CLAUDE_CONFIG_DIR replaces ~/.claude entirely"
+    (is (= "/mnt/cfg/projects/-repo/memory"
+           ((get-in harness/harnesses [:claude-code :notes-dir])
+            {:home "/home/kira" :env {"CLAUDE_CONFIG_DIR" "/mnt/cfg"}} "/repo"))))
+  (testing "CODEX_HOME replaces ~/.codex"
+    (is (= "/mnt/codex/memories"
+           ((get-in harness/harnesses [:codex :notes-dir])
+            {:home "/home/kira" :env {"CODEX_HOME" "/mnt/codex"}} "/repo")))))
+
+(deftest notes-path-resolution
+  (let [h (harness/resolve-harness :claude-code)]
+    (testing "an explicit :dir wins outright"
+      (is (= "/anywhere/notes" (harness/notes-path h {:dir "/anywhere/notes"
+                                                      :ctx {:home "/h" :env {}}}))))
+    (testing "otherwise the harness default from the injected ctx"
+      (is (str/ends-with? (harness/notes-path h {:project "/repo"
+                                                 :ctx {:home "/h" :env {}}})
+                          "/h/.claude/projects/-repo/memory")))))
+
+(deftest inject-target-resolution
+  (let [h (harness/resolve-harness :claude-code)]
+    (is (= "/notes/MEMORY.md" (harness/inject-target h "/notes" nil))
+        "harness default, inside the notes dir")
+    (is (= "/notes/CONTEXT.md" (harness/inject-target h "/notes" "CONTEXT.md"))
+        "relative override resolves against the notes dir")
+    (is (= "/elsewhere/view.md" (harness/inject-target h "/notes" "/elsewhere/view.md"))
+        "absolute override wins outright")))
 
 (deftest unknown-harness-fails-with-supported-list
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unknown harness"
@@ -31,7 +60,8 @@
 
 (deftest codex-harness-expectations
   (let [h (harness/resolve-harness "codex")]
-    (is (= "/home/k/.codex/memories" ((:notes-dir h) "/home/k" "/ignored/project"))
+    (is (= "/home/k/.codex/memories"
+           ((:notes-dir h) {:home "/home/k" :env {}} "/ignored/project"))
         "codex memories are per-machine, not per-project")
     (is (= "memory_summary.md" (:inject-file h))
         "the consolidated summary is also the injection slot")))

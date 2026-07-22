@@ -10,9 +10,11 @@
   Consolidation runs at lower frequency, gated by a sibling stamp file next
   to the db (default: at most every 7 days).
 
-  `hooks install` merges a SessionEnd entry into <project>/.claude/settings.json,
-  idempotently: re-running updates the claimgraph entry in place and never
-  duplicates it; everything else in the file is preserved."
+  `hooks install` merges a SessionEnd entry into the project's hook settings
+  (default <project>/.claude/settings.json; overridable via --settings-file /
+  $CLAIMGRAPH_SETTINGS_FILE / the project config), idempotently: re-running
+  updates the claimgraph entry in place and never duplicates it; everything
+  else in the file is preserved."
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str]
@@ -53,14 +55,16 @@
 
   opts: :db (the store path, for the consolidation stamp)
         :harness :project :dir :extractor :extractor-fn (ingest/compile)
+        :inject-file (compile-context's write-target override)
         :consolidate-days (default 7; 0 = every run)
         :command :summarize-fn :judge-fn :resolve :min-confidence (consolidate)"
   [s {:keys [db consolidate-days] :as opts}]
-  (let [ingest (attempt #(notes/ingest! s (select-keys opts [:harness :project :dir
+  (let [ingest (attempt #(notes/ingest! s (select-keys opts [:harness :project :dir :ctx
                                                              :extractor :extractor-fn
                                                              :evidence-dir])))
-        compiled (attempt #(context/compile! s (select-keys opts [:harness :project
-                                                                  :dir :budget])))
+        compiled (attempt #(context/compile! s (select-keys opts [:harness :project :dir
+                                                                  :ctx :inject-file
+                                                                  :budget])))
         days (or consolidate-days default-consolidate-days)
         due? (consolidate-due? db days (core/now))
         consolidated (if-not due?
@@ -96,16 +100,20 @@
                 (conj existing entry)))))
 
 (defn install!
-  "Wire the ambient loop into <project>/.claude/settings.json: a SessionEnd
+  "Wire the ambient loop into the project's hook settings: a SessionEnd
   entry always, and with :coach also a UserPromptSubmit entry that runs the
   gated push (claim coach --hook) — a briefing lands only when standing
   decisions, failure modes, or open conflicts touch the task.
   opts: :project (default cwd) :harness (default claude-code)
+        :settings-file (where the harness reads hook config from; default
+        <project>/.claude/settings.json — override for settings.local.json,
+        a relocated config dir, or another harness's layout)
         :consolidate-days :coach :bin (the claim executable for the hook
         command; auto-detects a repo-local bin/claim, else assumes PATH)"
-  [{:keys [project harness consolidate-days coach bin]}]
+  [{:keys [project harness settings-file consolidate-days coach bin]}]
   (let [project (str (fs/canonicalize (or project ".")))
-        settings-file (str (fs/path project ".claude" "settings.json"))
+        settings-file (str (or settings-file
+                               (fs/path project ".claude" "settings.json")))
         settings (if (fs/exists? settings-file)
                    (json/parse-string (slurp settings-file) true)
                    {})

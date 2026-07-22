@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
-# Install claimgraph's two native-binary dependencies: babashka (bb) and the
-# Datalevin pod binary (dtlv). Both are GraalVM native images — no JVM.
+# Install claimgraph: its two native-binary dependencies — babashka (bb) and
+# the Datalevin pod binary (dtlv), both GraalVM native images, no JVM — plus
+# a global `claim` launcher pointing at this checkout.
+#
+# Everything is overridable: INSTALL_DIR (default /usr/local/bin; use a
+# user-writable dir like ~/.local/bin to avoid sudo), BB_VERSION, DTLV_VERSION.
 set -euo pipefail
 
 BB_VERSION="${BB_VERSION:-1.12.218}"
 DTLV_VERSION="${DTLV_VERSION:-0.10.18}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+
+# Resolve this checkout's root, so the `claim` launcher works from anywhere.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+
+mkdir -p "$INSTALL_DIR"
 
 if ! command -v bb >/dev/null 2>&1; then
   echo "Installing babashka ${BB_VERSION}..."
@@ -31,4 +46,8 @@ if ! command -v dtlv >/dev/null 2>&1; then
 fi
 dtlv help >/dev/null && echo "dtlv ${DTLV_VERSION} OK"
 
-echo "Done. Try: bin/claim init"
+ln -sf "$ROOT/bin/claim" "$INSTALL_DIR/claim"
+echo "claim -> $ROOT/bin/claim (via $INSTALL_DIR/claim)"
+
+echo
+echo "Done. In the project you want claimgraph to remember, run:  claim setup"

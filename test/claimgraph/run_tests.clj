@@ -4,6 +4,7 @@
             [claimgraph.bench-test]
             [claimgraph.coach-test]
             [claimgraph.code-ingest-test]
+            [claimgraph.config-test]
             [claimgraph.consolidate-test]
             [claimgraph.context-test]
             [claimgraph.core-test]
@@ -19,10 +20,13 @@
             [claimgraph.oplog-test]
             [claimgraph.outcome-test]
             [claimgraph.retrieval-test]
-            [claimgraph.session-test]))
+            [claimgraph.session-test]
+            [claimgraph.setup-test]))
 
 (defn -main [& _]
   (let [{:keys [fail error]} (t/run-tests 'claimgraph.logic-test
+                                          'claimgraph.config-test
+                                          'claimgraph.setup-test
                                           'claimgraph.core-test
                                           'claimgraph.load-test
                                           'claimgraph.evidence-test

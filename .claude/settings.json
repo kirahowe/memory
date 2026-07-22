@@ -1,0 +1,11 @@
+{
+  "hooks" : {
+    "SessionEnd" : [ {
+      "hooks" : [ {
+        "type" : "command",
+        "command" : "bin/claim hooks run --harness claude-code",
+        "timeout" : 600
+      } ]
+    } ]
+  }
+}

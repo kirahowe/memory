@@ -1,4 +1,4 @@
-{:paths ["src" "test" "bench"]
+{:paths ["src" "resources" "test" "bench"]
  :tasks
  {test     {:doc  "Run the test suite against both stores"
             :task (do (require '[claimgraph.run-tests])

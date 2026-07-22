@@ -192,15 +192,14 @@
 
   opts: :harness (default claude-code) :dir (override the resolved notes dir)
         :project (project dir the harness keys its notes on; default cwd)
+        :ctx (harness-resolution context {:home :env}; injectable, tests)
         :extractor (command string) :extractor-fn (injectable, tests)
         :evidence-dir (keep each ingested note revision as a content-
                        addressed artifact; skipped when absent)
         :dry-run (extract and report, write nothing)"
-  [s {:keys [harness dir project extractor extractor-fn evidence-dir dry-run]}]
+  [s {:keys [harness extractor extractor-fn evidence-dir dry-run] :as opts}]
   (let [h (harness/resolve-harness harness)
-        notes-dir (or dir
-                      ((:notes-dir h) (System/getProperty "user.home")
-                                      (str (fs/canonicalize (or project ".")))))]
+        notes-dir (harness/notes-path h (select-keys opts [:dir :project :ctx]))]
     (if-not (fs/directory? notes-dir)
       {:status :no-notes-dir :harness (name (:id h)) :dir (str notes-dir)
        :hint "no auto-memory directory for this project yet (or pass --dir)"}

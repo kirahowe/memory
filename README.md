@@ -17,14 +17,38 @@ $ bin/claim history --subject AuthService --predicate has-version
 2.0.0   t-invalid: null                   (current)
 ```
 
-## Install
+## Setup
 
-Two native binaries, no JVM:
+Onboarding is designed to be delegated. Tell your coding agent:
+
+> Set up claimgraph as this project's memory system: clone
+> https://github.com/kirahowe/claimgraph somewhere stable (e.g. `~/tools`),
+> run its `scripts/setup.sh`, then run `claim setup` in this project and
+> follow the "next" steps it prints.
+
+Or by hand — two native binaries (no JVM), then one command in your project:
 
 ```bash
-scripts/setup.sh        # installs babashka (bb) + the Datalevin pod binary (dtlv)
-bin/claim init       # creates ./.claimgraph/db and seeds the 23-predicate vocabulary
+git clone https://github.com/kirahowe/claimgraph ~/tools/claimgraph
+~/tools/claimgraph/scripts/setup.sh   # babashka (bb) + the Datalevin pod (dtlv)
+                                      # + a global `claim` launcher
+                                      # (INSTALL_DIR=~/.local/bin to avoid sudo)
+cd ~/your-project
+claim setup                           # the whole onboarding, one idempotent command
 ```
+
+`claim setup` creates and seeds the store (`./.claimgraph/db`), gitignores
+the live store (the committable artifacts are `claim dump` output and
+`.claimgraph/config.json`), installs the agent skill into
+`.claude/skills/claimgraph/` (the judgment layer: when to consult, when to
+record, how to phrase facts), and wires the ambient loop — a SessionEnd hook
+so every session ends by feeding the graph and the next one starts with its
+compiled view injected. Every step reports as JSON, re-running is always
+safe, `--dry-run` shows the plan without writing, and `--mcp` additionally
+registers the MCP front-end in `.mcp.json`. Any non-default location you
+pass (`--db`, `--notes-dir`, `--settings-file`, ...) is persisted to
+`.claimgraph/config.json` so later commands need no flags — see
+[Configuration](#configuration).
 
 ## Quickstart
 
@@ -55,8 +79,34 @@ bin/claim history --subject AuthService --predicate depends-on
 ```
 
 All commands emit JSON to stdout (`--pretty` for humans); errors are JSON on
-stderr with exit 1. Database path: `--db`, `$CLAIMGRAPH_DB`, or `./.claimgraph/db`.
-Run `bin/claim help` for the full verb list.
+stderr with exit 1. Run `bin/claim help` for the full verb list.
+
+## Configuration
+
+No file location is assumed. Every setting resolves through one precedence
+chain — **CLI flag > environment variable > `.claimgraph/config.json` >
+default** — and `claim config` prints each setting's resolved value, which
+layer set it, and the fully resolved paths.
+
+| Setting | Flag | Env var | Default |
+|---|---|---|---|
+| store path | `--db` | `CLAIMGRAPH_DB` | `./.claimgraph/db` |
+| harness | `--harness` | `CLAIMGRAPH_HARNESS` | `claude-code` |
+| auto-memory notes dir | `--dir` | `CLAIMGRAPH_NOTES_DIR` | per harness, honoring `$CLAUDE_CONFIG_DIR` / `$CODEX_HOME` |
+| inject file (write-back target) | `--inject-file` | `CLAIMGRAPH_INJECT_FILE` | per harness: `MEMORY.md` / `memory_summary.md` |
+| hook-settings file | `--settings-file` | `CLAIMGRAPH_SETTINGS_FILE` | `<project>/.claude/settings.json` |
+| skills dir (`setup`) | `--skills-dir` | `CLAIMGRAPH_SKILLS_DIR` | `<project>/.claude/skills` |
+| LLM command | `--extractor` / `--command` | `CLAIMGRAPH_LLM_CMD` | `claude -p` |
+| raw-evidence dir | `--evidence-dir` | `CLAIMGRAPH_EVIDENCE_DIR` | `<db>.evidence` |
+| consolidation cadence (days) | `--consolidate-days` | `CLAIMGRAPH_CONSOLIDATE_DAYS` | `7` |
+
+The config file is JSON keyed by the kebab-case setting names
+(`{"harness": "codex", "notes-dir": "/mnt/notes"}`), lives at
+`$CLAIMGRAPH_CONFIG` or `./.claimgraph/config.json`, and is **committable**
+— `claim setup` writes the non-default choices you pass it, so one person's
+choices hold for every writer of the repo. Two more env vars sit below the
+settings layer: `$CLAIMGRAPH_DTLV` (path to the pod binary, default from
+`$PATH`) and `$CLAIMGRAPH_WRITER` (this machine's oplog writer id).
 
 ## How conflicts resolve
 
@@ -253,7 +303,8 @@ scans never reinforce — only intent writes do.
 ## Maintenance
 
 - `hooks install` / `hooks run` — the ambient loop, automated: a Claude Code
-  SessionEnd hook (wired into `.claude/settings.json` by `hooks install`)
+  SessionEnd hook (wired by `hooks install` into the project's hook settings
+  — default `.claude/settings.json`, overridable via `--settings-file`)
   runs `ingest-notes` → `compile-context` → `consolidate`-when-due (stamp-
   gated, default weekly) at the end of every session. Stages report
   independently — an extractor failure never blocks the deterministic
@@ -308,10 +359,10 @@ Datalevin pod) opens once per session instead of paying ~350ms of cold start
 per CLI call, which the ambient loop's per-prompt coach hook made worth
 fixing. Tools: `memory_facts`, `memory_search`, `memory_recall`,
 `memory_history`, `memory_conflicts`, `memory_coach`, and `memory_assert`
-(write-lease-guarded, full conflict machinery). Wire up:
-`claude mcp add claimgraph -- bin/claim mcp`. The CLI and the skill remain
-the primary surface; MCP is the low-latency second front-end the handoff doc
-trigger-gated.
+(write-lease-guarded, full conflict machinery). Wire up: `claim setup --mcp`
+(writes the project's `.mcp.json`) or `claude mcp add claimgraph -- claim mcp`.
+The CLI and the skill remain the primary surface; MCP is the low-latency
+second front-end the handoff doc trigger-gated.
 
 ## Benchmark
 
@@ -390,4 +441,6 @@ Quarto book. Build it with `bb book` (needs a JVM and the
   auto-memory as an ingestion tier and compile the graph back into their
   injection surface (the ambient loop).
 - `.claude/skills/claimgraph/SKILL.md` — the usage judgment: when an agent should
-  consult, write, and how to phrase facts.
+  consult, write, and how to phrase facts. Generated from
+  `resources/claimgraph/SKILL.md` (the template `claim setup` installs into
+  projects) — edit the template, not this copy; a test keeps them in sync.

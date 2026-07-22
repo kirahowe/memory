@@ -1,5 +1,11 @@
-# Live store (LMDB directory). The committable artifact is `claim dump` output.
-.claimgraph/
+# claimgraph live store + local artifacts (the committable artifacts are
+# `claim dump` output and .claimgraph/config.json)
+.claimgraph/db/
+.claimgraph/db.lock
+.claimgraph/db.evidence/
+.claimgraph/db.oplog/
+.claimgraph/db.retrievals
+.claimgraph/db.last-consolidate
 *.dump.jsonl
 bench/results/
 
