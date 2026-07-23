@@ -8,4 +8,8 @@ while [ -L "$SOURCE" ]; do
   [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+if ! command -v bb >/dev/null 2>&1; then
+  echo "claim requires babashka (bb) — run $ROOT/scripts/setup.sh to install the prerequisites" >&2
+  exit 127
+fi
 exec bb --config "$ROOT/bb.edn" -m claimgraph.cli -- "$@"

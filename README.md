@@ -26,7 +26,17 @@ Onboarding is designed to be delegated. Tell your coding agent:
 > run its `scripts/setup.sh`, then run `claim setup` in this project and
 > follow the "next" steps it prints.
 
-Or by hand — two native binaries (no JVM), then one command in your project:
+**Prerequisites.** claimgraph runs on two native binaries — babashka (`bb`)
+and the Datalevin pod (`dtlv`), no JVM — and `scripts/setup.sh` installs
+both, so the prompt above is genuinely the whole setup. They are hard
+requirements: `claim` refuses to run without `bb`, and `claim setup` checks
+for `dtlv` before wiring anything (a SessionEnd hook without its pod binary
+would just be session-end noise, so a failed preflight blocks with the fix
+attached). The LLM tiers additionally want an authenticated `claude` CLI
+(or any command via `$CLAIMGRAPH_LLM_CMD`) — that one is optional: without
+it, extraction and judging sit out while every deterministic layer works.
+
+Or by hand — the same two binaries, then one command in your project:
 
 ```bash
 git clone https://github.com/kirahowe/claimgraph ~/tools/claimgraph

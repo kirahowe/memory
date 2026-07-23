@@ -447,9 +447,11 @@ $CODEX_HOME).
 
 Commands:
   setup               One-shot onboarding for a project (idempotent, safe to
-                        re-run): create + seed the store, persist non-default
-                        choices to .claimgraph/config.json, gitignore the live
-                        store, install the agent skill, wire the ambient loop
+                        re-run): verify prerequisites (a missing dtlv blocks —
+                        nothing is wired that would fail at runtime), create +
+                        seed the store, persist non-default choices to
+                        .claimgraph/config.json, gitignore the live store,
+                        install the agent skill, wire the ambient loop
                         (hooks install). [--project DIR] [--db PATH]
                         [--harness claude-code] [--notes-dir DIR]
                         [--inject-file F] [--settings-file F] [--skills-dir D]

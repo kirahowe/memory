@@ -13,9 +13,47 @@
 
 (def fake-init (constantly {:status :initialized :predicates 23}))
 
+(defn- fake-which
+  "Prerequisite lookup with everything installed — tests must not depend on
+  the machine's real PATH."
+  [bin]
+  (str "/fake/bin/" bin))
+
+(def base-opts {:init-fn fake-init :which fake-which})
+
+(deftest prerequisites-are-checked-first
+  (testing "everything present -> :ok, extractor reported"
+    (let [r (setup/check-prerequisites {:which fake-which})]
+      (is (= :ok (:status r)))
+      (is (= "/fake/bin/dtlv" (:dtlv r)))
+      (is (= {:command "claude -p" :found true} (:extractor r)))))
+  (testing "a missing extractor is a note, never an error"
+    (let [r (setup/check-prerequisites {:which #(when (= % "dtlv") "/fake/bin/dtlv")})]
+      (is (= :ok (:status r)))
+      (is (false? (get-in r [:extractor :found])))
+      (is (str/includes? (:note r) "deterministic stages are unaffected"))))
+  (testing "a missing dtlv is a hard error with the fix attached"
+    (let [r (setup/check-prerequisites {:which (constantly nil)})]
+      (is (= :error (:status r)))
+      (is (str/includes? (:hint r) "scripts/setup.sh")))))
+
+(deftest missing-dtlv-blocks-and-writes-nothing
+  (let [project (temp-project)
+        r (setup/run! {:project project :which (constantly nil)
+                       :init-fn (fn [] (throw (ex-info "must not run" {})))})]
+    (is (= :blocked (:status r)))
+    (is (= [:prerequisites] (keys (:steps r))) "no other step even attempted")
+    (is (str/includes? (:hint r) "scripts/setup.sh"))
+    (is (empty? (fs/list-dir project)) "a hook that would fail at runtime is never wired"))
+  (testing "dry-run still shows the plan, with the prereq error visible"
+    (let [r (setup/run! {:project (temp-project) :dry-run true
+                         :which (constantly nil) :init-fn fake-init})]
+      (is (= :dry-run (:status r)))
+      (is (= :error (get-in r [:steps :prerequisites :status]))))))
+
 (deftest full-pass-is-idempotent
   (let [project (temp-project)
-        r1 (setup/run! {:project project :init-fn fake-init})]
+        r1 (setup/run! (assoc base-opts :project project))]
     (testing "first pass installs everything"
       (is (= :ready (:status r1)))
       (is (= "claim" (:bin r1)) "no repo-local bin/claim -> PATH")
@@ -36,7 +74,7 @@
         (is (str/includes? ignore ".claimgraph/db.oplog/"))
         (is (some? (get-in settings [:hooks :SessionEnd])))))
     (testing "second pass changes nothing"
-      (let [r2 (setup/run! {:project project :init-fn fake-init})]
+      (let [r2 (setup/run! (assoc base-opts :project project))]
         (is (= :unchanged (get-in r2 [:steps :gitignore :status])))
         (is (= :unchanged (get-in r2 [:steps :skill :status])))
         (is (= :updated (get-in r2 [:steps :hooks :status]))
@@ -44,29 +82,29 @@
 
 (deftest dry-run-writes-nothing
   (let [project (temp-project)
-        r (setup/run! {:project project :dry-run true :mcp true
+        r (setup/run! {:project project :dry-run true :mcp true :which fake-which
                        :init-fn (fn [] (throw (ex-info "must not run" {})))})]
     (is (= :dry-run (:status r)))
-    (is (every? #(contains? #{:dry-run :skipped :unchanged} (:status %))
+    (is (every? #(contains? #{:ok :dry-run :skipped :unchanged} (:status %))
                 (vals (:steps r))))
     (is (empty? (fs/list-dir project)) "not a single file written")))
 
 (deftest chosen-settings-persist-to-project-config
   (let [project (temp-project)
-        r (setup/run! {:project project :init-fn fake-init
-                       :harness "codex" :chosen {:harness "codex" :consolidate-days 3}})
+        r (setup/run! (assoc base-opts :project project
+                             :harness "codex" :chosen {:harness "codex" :consolidate-days 3}))
         cfg (json/parse-string
              (slurp (str (fs/path project ".claimgraph" "config.json"))) true)]
     (is (= :installed (get-in r [:steps :config :status])))
     (is (= {:harness "codex" :consolidate-days 3} cfg))
     (testing "re-running with new choices merges, preserving earlier ones"
-      (setup/run! {:project project :init-fn fake-init
-                   :chosen {:extractor "llm -m small"}})
+      (setup/run! (assoc base-opts :project project
+                         :chosen {:extractor "llm -m small"}))
       (is (= {:harness "codex" :consolidate-days 3 :extractor "llm -m small"}
              (json/parse-string
               (slurp (str (fs/path project ".claimgraph" "config.json"))) true))))
     (testing "all defaults + no file -> nothing persisted"
-      (is (= :skipped (get-in (setup/run! {:project (temp-project) :init-fn fake-init})
+      (is (= :skipped (get-in (setup/run! (assoc base-opts :project (temp-project)))
                               [:steps :config :status]))))))
 
 (deftest gitignore-respects-existing-coverage-and-external-dbs
@@ -103,8 +141,8 @@
       (is (= {:command "claim" :args ["mcp"]} (get-in mcp [:mcpServers :claimgraph]))))))
 
 (deftest failed-step-degrades-to-partial
-  (let [r (setup/run! {:project (temp-project)
-                       :init-fn (fn [] (throw (ex-info "no dtlv on PATH" {})))})]
+  (let [r (setup/run! {:project (temp-project) :which fake-which
+                       :init-fn (fn [] (throw (ex-info "store backend exploded" {})))})]
     (is (= :partial (:status r)))
     (is (= :error (get-in r [:steps :store :status])))
     (is (= :installed (get-in r [:steps :skill :status]))

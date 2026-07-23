@@ -26,6 +26,36 @@
 ;; Pure: plans
 ;; ---------------------------------------------------------------------------
 
+(defn check-prerequisites
+  "claim itself runs on bb (if this code is running, bb is either present or
+  the caller is a test JVM), but the store cannot open without the Datalevin
+  pod binary — a missing dtlv is a hard stop, because everything setup wires
+  (init, the SessionEnd hook) would fail at runtime. The extractor command is
+  optional: without it the LLM stages degrade and the deterministic stages
+  are unaffected, so it reports as a note, never an error.
+  :which is injectable for tests (fn name -> path-or-nil)."
+  [{:keys [extractor which]}]
+  (let [which (or which #(some-> (fs/which %) str))
+        dtlv-setting (System/getenv "CLAIMGRAPH_DTLV")
+        dtlv (if dtlv-setting
+               (when (or (fs/exists? dtlv-setting) (which dtlv-setting))
+                 (str dtlv-setting))
+               (which "dtlv"))
+        extractor-cmd (or extractor "claude -p")
+        extractor-bin (first (str/split extractor-cmd #"\s+"))]
+    (merge
+     {:status (if dtlv :ok :error)
+      :bb (or (System/getProperty "babashka.version") (which "bb") "not found")
+      :dtlv (or dtlv "not found")
+      :extractor {:command extractor-cmd :found (boolean (which extractor-bin))}}
+     (when-not dtlv
+       {:error "the Datalevin pod binary (dtlv) is not installed"
+        :hint "run scripts/setup.sh from the claimgraph checkout (or point $CLAIMGRAPH_DTLV at the binary)"})
+     (when-not (which extractor-bin)
+       {:note (str "extractor '" extractor-bin "' not on PATH — LLM stages "
+                   "(session-extract, ingest-notes, judge, consolidate summaries) "
+                   "won't run until it is; deterministic stages are unaffected")}))))
+
 (def gitignore-header "# claimgraph live store + local artifacts (the committable artifacts are")
 
 (defn gitignore-entries
@@ -131,21 +161,10 @@
                  (str (json/generate-string updated {:pretty true}) "\n")
                  dry-run)))
 
-(defn run!
-  "The whole onboarding pass. Steps report independently; a failed step is an
-  :error entry, not an abort.
-
-  opts: :project (default cwd) :bin (claim executable; auto-detects a
-        repo-local bin/claim) :db :harness :settings-file :skills-dir
-        :consolidate-days :coach :mcp :dry-run
-        :chosen (explicit settings to persist to the project config)
-        :init-fn (opens/seeds the store; injectable so tests and --dry-run
-        never touch a real backend)"
-  [{:keys [project bin mcp dry-run init-fn chosen] :as opts}]
-  (let [project (str (fs/canonicalize (or project ".")))
-        bin (or bin
-                (if (fs/exists? (fs/path project "bin" "claim")) "bin/claim" "claim"))
-        steps (array-map
+(defn- run-steps!
+  [prereqs {:keys [project bin mcp dry-run init-fn chosen] :as opts}]
+  (let [steps (array-map
+               :prerequisites prereqs
                :store (if dry-run
                         {:status :dry-run :note "would create + seed the store"}
                         (attempt init-fn))
@@ -178,3 +197,30 @@
                  "--predicate decided-against --object <alternative> --class commitment")
             (str "Clojure project? seed the structural layer: " bin " ingest-code --dir src")
             (str "see every setting, its value, and where it came from: " bin " config")]}))
+
+(defn run!
+  "The whole onboarding pass. Prerequisites are checked first and a missing
+  dtlv BLOCKS: nothing is wired that would fail at runtime (a SessionEnd
+  hook without its pod binary is just session-end noise). Past preflight,
+  steps report independently; a failed step is an :error entry, not an abort.
+
+  opts: :project (default cwd) :bin (claim executable; auto-detects a
+        repo-local bin/claim) :db :harness :settings-file :skills-dir
+        :consolidate-days :coach :mcp :dry-run
+        :chosen (explicit settings to persist to the project config)
+        :which (prerequisite lookup, injectable for tests)
+        :init-fn (opens/seeds the store; injectable so tests and --dry-run
+        never touch a real backend)"
+  [{:keys [project bin] :as opts}]
+  (let [project (str (fs/canonicalize (or project ".")))
+        bin (or bin
+                (if (fs/exists? (fs/path project "bin" "claim")) "bin/claim" "claim"))
+        prereqs (attempt #(check-prerequisites (select-keys opts [:extractor :which])))
+        opts (assoc opts :project project :bin bin)]
+    (if (and (= :error (:status prereqs)) (not (:dry-run opts)))
+      {:status :blocked
+       :project project
+       :bin bin
+       :steps {:prerequisites prereqs}
+       :hint (:hint prereqs)}
+      (run-steps! prereqs opts))))
