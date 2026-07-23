@@ -450,6 +450,10 @@ Quarto book. Build it with `bb book` (needs a JVM and the
 - `docs/consuming-auto-memory.md` — design note: consume the harnesses'
   auto-memory as an ingestion tier and compile the graph back into their
   injection surface (the ambient loop).
+- `docs/memory-audit.md` — spec + handoff for `claim audit`: the
+  pile-consistency scorecard (contradictions, staleness, restatement, name
+  drift, injection bloat) that runs before claimgraph is even installed.
+  First of the three measurement tiers; not yet built.
 - `.claude/skills/claimgraph/SKILL.md` — the usage judgment: when an agent should
   consult, write, and how to phrase facts. Generated from
   `resources/claimgraph/SKILL.md` (the template `claim setup` installs into
